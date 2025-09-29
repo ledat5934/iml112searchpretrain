@@ -65,7 +65,6 @@ class DebugAgent(BaseAgent):
 - Do not remove subsampling if exists.
 - Provide the improved, self-contained Python script again.
 - There should be no additional headings or text in your response.
-- All the provided input data is stored in "./input" directory.
 - Remember to print a line in the code with 'Final Validation Performance: {final_validation_score}' so we can parse performance.
 - The code should be a single-file python program that is self-contained and can be executed as-is.
 - Your response should only contain a single code block.
