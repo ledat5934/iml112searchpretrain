@@ -27,7 +27,7 @@ Return: list[Architecture]
 Output rules:
 - Output ONLY the JSON array (no explanations, no markdown)
 - Do NOT wrap in code fences
-- 'architecture_structure' should describe: layer types, connections, key design choices, hyperparameters, each layer's precise description
+- 'architecture_structure' should describe: layer types, connections, key design choices, hyperparameters
 - Include specific details like "3-layer MLP with dropout" or "ResNet-style with skip connections"
 - Source link should be a valid URL (arXiv, GitHub, blog, Kaggle)
 
