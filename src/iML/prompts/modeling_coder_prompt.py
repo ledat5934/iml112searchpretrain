@@ -151,6 +151,21 @@ For Custom Neural Networks:
 - Monitor training/validation loss curves
 - Use epoch = 15 with early stopping = 3
 """
+        elif iteration_type == "custom_nn_search":
+            return """
+For Custom Neural Networks with Architecture Search:
+- Adapt the suggested architecture pattern from the guideline to fit this specific problem
+- Use PyTorch to implement the architecture with appropriate layer types and connections
+- Adjust layer sizes, number of layers, and hyperparameters based on data characteristics
+- Include proper layer definitions (Dense, Dropout, BatchNormalization as appropriate)
+- Implement training loop with validation monitoring
+- Use appropriate loss functions and optimizers (Adam, SGD)
+- Add learning rate scheduling and early stopping
+- Include model checkpointing for best weights
+- Handle overfitting with regularization techniques
+- Monitor training/validation loss curves
+- Use epoch = 15 with early stopping = 3
+"""
         elif iteration_type == "pretrained":
             return """
 For Pretrained Models (prioritize PyTorch):

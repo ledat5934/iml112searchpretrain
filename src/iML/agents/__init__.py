@@ -9,6 +9,7 @@ from .modeling_coder_agent import ModelingCoderAgent
 from .assembler_agent import AssemblerAgent
 from .profiling_summarizer_agent import ProfilingSummarizerAgent
 from .model_retriever_agent import ModelRetrieverAgent
+from .architecture_retriever_agent import ArchitectureRetrieverAgent
 from .comparison_agent import ComparisonAgent
 from .debug_agent import DebugAgent
 
@@ -22,6 +23,7 @@ __all__ = [
     "AssemblerAgent",
     "ProfilingSummarizerAgent",
     "ModelRetrieverAgent",
+    "ArchitectureRetrieverAgent",
     "ComparisonAgent",
     "DebugAgent",
 ]

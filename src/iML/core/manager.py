@@ -18,6 +18,7 @@ from ..agents import (
     ProfilingAgent,
     ProfilingSummarizerAgent,
     ModelRetrieverAgent,
+    ArchitectureRetrieverAgent,
     GuidelineAgent,
     PreprocessingCoderAgent,
     ModelingCoderAgent,
@@ -117,6 +118,10 @@ class Manager:
             config=config,
             manager=self,
         )
+        self.architecture_retriever_agent = ArchitectureRetrieverAgent(
+            config=config,
+            manager=self,
+        )
         self.guideline_agent = GuidelineAgent(
             config=config,
             manager=self,
@@ -206,7 +211,24 @@ class Manager:
     def _run_iteration_pipeline_with_checks(self, iteration_type, timeout_occurred):
         """Run iteration pipeline with periodic timeout checks for Windows."""
         try:
-            # Step 1a: For pretrained iteration, run model retrieval now; otherwise clear suggestions
+            # Step 1a: For custom_nn_search iteration, run architecture search
+            if iteration_type == "custom_nn_search":
+                if timeout_occurred.is_set():
+                    raise IterationTimeoutError("Iteration timeout occurred before architecture search")
+                architecture_suggestions = self.architecture_retriever_agent()
+                if architecture_suggestions and "error" not in architecture_suggestions and architecture_suggestions.get("architectures"):
+                    self.architecture_suggestions = architecture_suggestions
+                    logger.info("Architecture search completed for custom_nn_search iteration.")
+                else:
+                    # Fallback: continue without search (LLM designs from scratch)
+                    logger.warning("Architecture search failed, LLM will design from scratch.")
+                    self.architecture_suggestions = None
+            else:
+                # Ensure other iterations (including custom_nn) are not influenced by architecture search
+                if hasattr(self, "architecture_suggestions"):
+                    delattr(self, "architecture_suggestions")
+            
+            # Step 1b: For pretrained iteration, run model retrieval now; otherwise clear suggestions
             if iteration_type == "pretrained":
                 if timeout_occurred.is_set():
                     raise IterationTimeoutError("Iteration timeout occurred before model retrieval")
@@ -614,19 +636,19 @@ class Manager:
         # Define iterations
         iterations = [
             {
-                "name": "pretrained",
-                "folder": "iteration_1_pretrained", 
-                "description": "Pretrained Models"
-            },
-            {
                 "name": "traditional",
-                "folder": "iteration_2_traditional",
+                "folder": "iteration_1_traditional",
                 "description": "Traditional ML algorithms (XGBoost, LightGBM, CatBoost)"
             },
             {
-                "name": "custom_nn", 
-                "folder": "iteration_3_custom_nn",
-                "description": "Custom Neural Networks"
+                "name": "custom_nn_search", 
+                "folder": "iteration_2_custom_nn_search",
+                "description": "Custom Neural Networks with Architecture Search"
+            },
+            {
+                "name": "pretrained",
+                "folder": "iteration_3_pretrained", 
+                "description": "Pretrained Models"
             }
         ]
         
@@ -830,7 +852,8 @@ class Manager:
         # Create iteration-specific output folder
         iteration_info = {
             "traditional": {"folder": "iteration_traditional", "description": "Traditional ML algorithms"},
-            "custom_nn": {"folder": "iteration_custom_nn", "description": "Custom Neural Networks"}, 
+            "custom_nn": {"folder": "iteration_custom_nn", "description": "Custom Neural Networks (no search)"}, 
+            "custom_nn_search": {"folder": "iteration_custom_nn_search", "description": "Custom Neural Networks with Architecture Search"},
             "pretrained": {"folder": "iteration_pretrained", "description": "Pretrained Models"}
         }
         
@@ -906,7 +929,22 @@ class Manager:
     
     def _run_iteration_pipeline(self, iteration_type):
         """Run the pipeline for a specific iteration type."""
-        # Step 1a: For pretrained iteration, per-candidate; otherwise normal flow
+        # Step 1a: For custom_nn_search iteration, run architecture search
+        if iteration_type == "custom_nn_search":
+            architecture_suggestions = self.architecture_retriever_agent()
+            if architecture_suggestions and "error" not in architecture_suggestions and architecture_suggestions.get("architectures"):
+                self.architecture_suggestions = architecture_suggestions
+                logger.info("Architecture search completed for custom_nn_search iteration.")
+            else:
+                # Fallback: continue without search (LLM designs from scratch)
+                logger.warning("Architecture search failed, LLM will design from scratch.")
+                self.architecture_suggestions = None
+        else:
+            # Ensure other iterations (including custom_nn) are not influenced by architecture search
+            if hasattr(self, "architecture_suggestions"):
+                delattr(self, "architecture_suggestions")
+        
+        # Step 1b: For pretrained iteration, per-candidate; otherwise normal flow
         if iteration_type == "pretrained":
             model_suggestions = self.model_retriever_agent()
             if (not model_suggestions) or ("error" in model_suggestions) or (not model_suggestions.get("sota_models")):

@@ -231,6 +231,29 @@ IMPORTANT: Ensure the generated JSON is perfectly valid.
                 + "\n\nIMPORTANT (PRETRAINED): You MUST choose a model from the SOTA shortlist above (or its exact HF model) for 'model_selection'.\n"
                   "Provide configuration aligned with the chosen model."
             )
+        
+        # If custom_nn_search iteration and architecture suggestions exist, add architecture guidance
+        architecture_section = ""
+        architecture_suggestions = getattr(self.manager, "architecture_suggestions", None)
+        if iteration_type == "custom_nn_search" and architecture_suggestions:
+            architectures = architecture_suggestions.get("architectures", [])
+            if architectures:
+                # Keep only architecture info for the prompt
+                arch_shortlist = [
+                    {
+                        "architecture_name": a.get("architecture_name"),
+                        "architecture_structure": a.get("architecture_structure"),
+                        "source_link": a.get("source_link"),
+                    }
+                    for a in architectures[:1]  # Only first candidate
+                ]
+                architecture_section = (
+                    "\n## SUGGESTED NEURAL NETWORK ARCHITECTURE (from search)\n"
+                    + json.dumps(arch_shortlist, indent=2, ensure_ascii=False)
+                    + "\n\nRECOMMENDATION (CUSTOM_NN_SEARCH): You should adapt the suggested architecture pattern above for this specific task.\n"
+                      "Feel free to modify layer sizes, add/remove layers, or adjust hyperparameters based on the data characteristics.\n"
+                      "The architecture structure should guide your design, but you have flexibility to optimize it for this problem."
+                )
 
         prompt = self.template.format(
             dataset_name=dataset_name,
@@ -243,7 +266,7 @@ IMPORTANT: Ensure the generated JSON is perfectly valid.
             submission_file_description=submission_file_description,
             model_suggestions_str=model_suggestions_str,
             algorithm_constraint=algorithm_constraint,
-            id_format_section=id_format_section + sota_section
+            id_format_section=id_format_section + sota_section + architecture_section
         )
 
         self.manager.save_and_log_states(prompt, "guideline/guideline_prompt.txt")
@@ -255,6 +278,8 @@ IMPORTANT: Ensure the generated JSON is perfectly valid.
             return "IMPORTANT: YOU MUST USE TRADITIONAL ML ALGORITHMS: XGBoost, LightGBM, CatBoost, Linear regression, SVM, Bayes, ..."
         elif iteration_type == "custom_nn":
             return "IMPORTANT: YOU MUST BUILD CUSTOM NEURAL NETWORKS from scratch using PyTorch. "
+        elif iteration_type == "custom_nn_search":
+            return "IMPORTANT: YOU MUST BUILD CUSTOM NEURAL NETWORKS from scratch using PyTorch, following the suggested architecture pattern below."
         elif iteration_type == "pretrained":
             return "IMPORTANT: YOU MUST USE PRETRAINED MODELS"
         else:

@@ -4,9 +4,10 @@ per_execution_timeout: 28800  # Default execution timeout (1 hour)
 
 # Per-iteration specific timeouts (in seconds)
 iteration_timeouts:
-  traditional: 7200     # 30 minutes - Traditional ML algorithms are typically faster
-  custom_nn: 7200      # 1 hour - Neural networks need more time for training
-  pretrained: 14400     # 40 minutes - Pretrained models, moderate complexity
+  traditional: 7200     # 2 hours - Traditional ML algorithms are typically faster
+  custom_nn: 7200      # 2 hours - Neural networks need more time for training (no search)
+  custom_nn_search: 10800  # 3 hours - Neural networks with architecture search (needs extra time for search)
+  pretrained: 14400     # 4 hours - Pretrained models, moderate complexity
   
 # Fallback timeout for unknown iteration types
 default_iteration_timeout: 7200

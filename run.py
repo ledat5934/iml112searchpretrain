@@ -64,9 +64,9 @@ Examples:
     )
     parser.add_argument(
         "--single-iteration",
-        choices=["traditional", "custom_nn", "pretrained"],
+        choices=["traditional", "custom_nn", "custom_nn_search", "pretrained"],
         default=None,
-        help="Run only a single iteration approach: 'traditional' (XGBoost, LightGBM), 'custom_nn' (PyTorch), or 'pretrained' (HuggingFace models)"
+        help="Run only a single iteration approach: 'traditional' (XGBoost, LightGBM), 'custom_nn' (PyTorch no search), 'custom_nn_search' (PyTorch with architecture search), or 'pretrained' (HuggingFace models)"
     )
     
     args = parser.parse_args()

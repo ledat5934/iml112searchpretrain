@@ -108,8 +108,10 @@ The **Multi-Iteration AutoML** mode is an advanced feature that automatically ge
 
 #### Iteration Types:
 1. **Traditional ML** (`iteration_1_traditional`): XGBoost, LightGBM, CatBoost algorithms
-2. **Custom Neural Networks** (`iteration_2_custom_nn`): PyTorch-based custom architectures  
+2. **Custom Neural Networks with Architecture Search** (`iteration_2_custom_nn_search`): PyTorch architectures guided by Google search for optimal patterns
 3. **Pretrained Models** (`iteration_3_pretrained`): HuggingFace transformers and pretrained models
+
+**Note**: For testing purposes, you can also run `custom_nn` (without search) where the LLM designs the architecture from scratch.
 
 #### Key Features:
 - **Shared Data Analysis**: All iterations use the same data profiling and feature analysis
@@ -130,7 +132,7 @@ python run_multi_iteration.py -i ./your_dataset
 
 # Run only a specific iteration type
 python run_multi_iteration.py -i ./your_dataset --single traditional
-python run_multi_iteration.py -i ./your_dataset --single custom_nn
+python run_multi_iteration.py -i ./your_dataset --single custom_nn_search
 python run_multi_iteration.py -i ./your_dataset --single pretrained
 ```
 
@@ -141,18 +143,25 @@ python run.py --checkpoint-mode multi-iteration -i ./your_dataset
 
 # Run single iteration approaches
 python run.py --single-iteration traditional -i ./your_dataset
-python run.py --single-iteration custom_nn -i ./your_dataset  
+python run.py --single-iteration custom_nn_search -i ./your_dataset  
 python run.py --single-iteration pretrained -i ./your_dataset
+
+# Or test custom_nn without architecture search
+python run.py --single-iteration custom_nn -i ./your_dataset
 ```
 
 #### Output Structure:
 ```
 runs/run_<timestamp>/
-├── iteration_1_traditional/     # Traditional ML solution
+├── iteration_1_traditional/         # Traditional ML solution
 │   ├── submission.csv
 │   └── states/final_executable_code.py
-├── iteration_2_custom_nn/       # Custom NN solution  
-├── iteration_3_pretrained/      # Pretrained model solution
+├── iteration_2_custom_nn_search/   # Custom NN with architecture search
+│   ├── submission.csv
+│   └── states/
+│       ├── architecture_retrieval.json  # Search results
+│       └── final_executable_code.py
+├── iteration_3_pretrained/          # Pretrained model solution
 ├── llm_comparison_results.json  # Detailed LLM analysis & ranking
 └── final_submission/            # Best solution (auto-selected)
     ├── submission.csv           # Best submission file

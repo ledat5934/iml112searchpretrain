@@ -189,6 +189,18 @@ For Custom Neural Networks:
 - Ensure consistent data types (float32/float64)
 - Consider dimensionality reduction if needed
 """
+        elif iteration_type == "custom_nn_search":
+            return """
+For Custom Neural Networks with Architecture Search:
+- Apply numerical normalization/standardization (StandardScaler, MinMaxScaler)
+- Convert categorical variables to numerical embeddings or one-hot encoding
+- Reshape data to proper format based on the suggested architecture pattern
+- Consider the architecture structure when preparing input dimensions
+- Create train/validation splits suitable for NN training with proper batching
+- Apply data augmentation techniques if applicable
+- Ensure consistent data types (float32/float64)
+- Consider dimensionality reduction if needed based on architecture requirements
+"""
         elif iteration_type == "pretrained":
             return """
 For Pretrained Models (preferably PyTorch-based):
