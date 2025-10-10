@@ -25,7 +25,7 @@ class ModelRetrieverAgent(BaseAgent):
     Falls back to curated, offline suggestions when ADK is unavailable.
     """
 
-    def __init__(self, config, manager, max_results: int = 1):
+    def __init__(self, config, manager, max_results: int = 5):
         super().__init__(config=config, manager=manager)
         self.max_results = max_results
 
