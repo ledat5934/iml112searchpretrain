@@ -84,6 +84,10 @@ IMPORTANT: Ensure the generated JSON is perfectly valid.
         "random_state": 42,
         "notes": "additional notes",
         "IDs in submission file contain file extensions": "true/false"
+        "training_strategy":
+            {
+                
+            }
     }},
     "preprocessing": [
         {{
