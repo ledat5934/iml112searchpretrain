@@ -26,7 +26,8 @@ class GuidelinePrompt(BasePrompt):
 
     def default_template(self) -> str:
         """Default template to request LLM to create guidelines."""
-        return """You are an expert Machine Learning architect. Your task is to analyze the provided dataset information and create a specific, actionable, and justified guideline for an AutoML pipeline.
+        return """You are an expert Machine Learning architect. Your task is to analyze the provided dataset information and create a specific, actionable, and justified guideline for an machine learning pipeline.
+        Using recent knowledge and state-of-the-art studies to devise promising high-quality plan
 ## Dataset Information:
 - Dataset: {dataset_name}
 - Task: {task_desc}
@@ -42,31 +43,17 @@ class GuidelinePrompt(BasePrompt):
 
 {id_format_section}
 
-## IMPORTANT CONSTRAINTS FOR REPRODUCIBILITY:
+## IMPORTANT CONSTRAINTS:
 - ALWAYS use random_state=42 for ALL random operations (train_test_split, cross_validation, model initialization)
 - Use simple random split strategy for train/test splitting
-
-## Guideline Generation Principles & Examples
-Your response must be guided by the following principles. Refer to these examples to understand the required level of detail.
-
-BE SPECIFIC AND ACTIONABLE: Your recommendations must be concrete actions.
-- Bad (Generic): "Handle missing values"
-- Good (Specific): "Impute 'Age' with the median"
+- Ensure that your plan is up-to-date with current state-of-the-art knowledge.
+- Ensure that your plan is designed for AI agents coders instead of human engineers.
+- Ensure that your plan is self-contained with sufficient instructions to be executed by the AI agents. 
+- Ensure that your plan includes all the key points and instructions (from handling data to modeling) so that the AI agents can successfully implement them. Do NOT directly write the code.
+- Ensure that your plan completely include the end-to-end process of machine learning pipeline in detail (i.e., from data loading to model training and submission creation) when applicable based on the given requirements.
 
 JUSTIFY YOUR CHOICES INTERNALLY: Even if the final JSON does not include every reasoning detail, your internal decision process must be sound, based on the data properties.
 
-IT IS ACCEPTABLE TO OMIT: If a step is not necessary, provide an empty list or null for that key in the JSON output.
-
-High-Quality Examples:
-
-Example 1: Feature Engineering for a DateTime column
-For a DateTime column like 'transaction_date', a good feature_engineering list would be ["Extract 'month' from 'transaction_date'", "Extract 'day_of_week' from 'transaction_date'"].
-
-Example 2: Handling High Cardinality Categorical Data
-For a categorical column 'product_id' with over 100 unique values, a good recommendation is ["Apply frequency encoding to 'product_id'"].
-
-Example 3: Handling Missing Numerical Data
-For a numeric column 'income' with 25% missing values and a skewed distribution, a good recommendation is ["Impute 'income' with its median"].
 
 {algorithm_constraint}
 
@@ -74,13 +61,10 @@ Before generating the final JSON, consider:
 1. Identify the target variable and task type (classification, regression, etc.).
 2. Review each variable's type, statistics, and potential issues.
 3. Choose appropriate and reasonable preprocessing steps for that pretrained model.
-4. If using pretrained models, choose the most appropriate ones.
-5. Compile these specific actions into the required JSON format.
+4. Compile these specific actions into the required JSON format.
 
 
 Output Format: Your response must be in the JSON format below:
-Provide your response in JSON format. An empty list or null is acceptable for recommendations if not applicable.
-
 IMPORTANT: Ensure the generated JSON is perfectly valid.
 - All strings must be enclosed in double quotes.
 - All backslashes inside strings must be properly escaped.
@@ -90,7 +74,7 @@ IMPORTANT: Ensure the generated JSON is perfectly valid.
 {{
     "target_identification": {{
         "target_variable": "identified_target_column_name",
-        "reasoning": "explanation for target selection",
+        "reasoning": "Explanation for target selection based on submission file and task.",
         "task_type": "classification/regression/etc"
     }},
     "modeling": {{
@@ -101,21 +85,31 @@ IMPORTANT: Ensure the generated JSON is perfectly valid.
         "notes": "additional notes",
         "IDs in submission file contain file extensions": "true/false"
     }},
-    "preprocessing": {{
-        "data_cleaning": ["specific step 1", "specific step 2"],
-        "feature_engineering": ["specific technique 1", "specific technique 2"],
-        "missing_values": ["strategy 1", "strategy 2"],
-        "feature_selection": ["method 1", "method 2"],
-        "data_splitting": {{"train": 0.8, "val": 0.2, "strategy": "simple_random", "random_state": 42}},
-        "notes": "additional notes"
-        "IDs in train file contain file extensions": "true/false"
-    }},
-    "evaluation": {{
-        "metrics": ["metric 1", "metric 2"],
-        "validation_strategy": ["3-fold cross-validation"],
-        "performance_benchmarking": ["baseline 1", "baseline 2"],
-        "result_interpretation": ["interpretation 1", "interpretation 2"]
-    }}
+    "preprocessing": [
+        {{
+            "step": 1,
+            "action": "action_type (e.g., impute_missing, encode_categorical, scale_numerical, feature_engineering, drop_columns, clean_data)",
+            "columns": ["column_name_1", "column_name_2"],
+            "strategy_or_details": "e.g., 'median', 'one_hot_encoder', 'standard_scaler', 'NewFeature = ColA / ColB', 'drop_reason'"
+        }},
+        {{
+            "step": 2,
+            "action": "...",
+            "columns": ["..."],
+            "strategy_or_details": "..."
+        }}
+        ...
+        {{
+            "step": ...,
+            "action": "data_splitting",
+            "train_size": 0.8,
+            "validation_size": 0.2,
+            "strategy": "simple_random",
+            "random_state": 42,
+            "notes":
+        }},
+        ...
+    ],
 }}"""
 
     def build(self, description_analysis: Dict[str, Any], profiling_result: Dict[str, Any], model_suggestions: Dict[str, Any] | None = None, iteration_type: str | None = None) -> str:
