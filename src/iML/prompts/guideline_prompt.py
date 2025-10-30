@@ -51,6 +51,7 @@ class GuidelinePrompt(BasePrompt):
 - Ensure that your plan is self-contained with sufficient instructions to be executed by the AI agents. 
 - Ensure that your plan includes all the key points and instructions (from handling data to modeling) so that the AI agents can successfully implement them. Do NOT directly write the code.
 - Ensure that your plan completely include the end-to-end process of machine learning pipeline in detail (i.e., from data loading to model training and submission creation) when applicable based on the given requirements.
+- **CRITICAL MEMORY CONSTRAINT FOR NEURAL NETWORKS**: When using neural networks (custom NN or pretrained models) with image/video/audio data or large datasets, you MUST specify batch processing approach in your preprocessing strategy. Use batch_size (e.g., 32, 64, 128) for feature extraction, data loading, and prediction. For traditional ML algorithms, you can load entire preprocessed features into memory after feature extraction is done in batches.
 
 JUSTIFY YOUR CHOICES INTERNALLY: Even if the final JSON does not include every reasoning detail, your internal decision process must be sound, based on the data properties.
 
@@ -60,8 +61,10 @@ JUSTIFY YOUR CHOICES INTERNALLY: Even if the final JSON does not include every r
 Before generating the final JSON, consider:
 1. Identify the target variable and task type (classification, regression, etc.).
 2. Review each variable's type, statistics, and potential issues.
-3. Choose appropriate and reasonable preprocessing steps for that pretrained model.
-4. Compile these specific actions into the required JSON format.
+3. Choose appropriate and reasonable preprocessing steps for that algorithm type.
+4. **For image/video/audio data with traditional ML**: Extract features using pre-trained CNNs in batches (batch_size=32-128), then load the extracted tabular features into memory for traditional ML training. Example strategy_or_details: "Extract image features using pre-trained CNN (EfficientNetB0) with batch_size=64 to avoid memory overflow. After feature extraction, load the resulting tabular features into memory for traditional ML training."
+5. **For image/video/audio data with neural networks**: Use batch processing throughout (data loading, training, prediction) with generators. Example: "Use batch_size=32 for data loading and training with generators"
+6. Compile these specific actions into the required JSON format.
 
 
 Output Format: Your response must be in the JSON format below:
