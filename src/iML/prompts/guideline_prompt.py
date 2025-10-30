@@ -79,15 +79,14 @@ IMPORTANT: Ensure the generated JSON is perfectly valid.
     }},
     "modeling": {{
         "recommended_algorithms": ["one most suitable algorithm"],
-        "model_selection": ["model_name1"](pretrained model name if using pretrained model),
-        "eval_metrics": [],
+        "model_selection": ["model_name"],
+        "eval_metrics": ["metric"],
         "random_state": 42,
-        "notes": "additional notes",
-        "IDs in submission file contain file extensions": "true/false"
-        "training_strategy":
-            {
-                
-            }
+        "notes": "additional notes about model selection and training",
+        "IDs_in_submission_file_contain_file_extensions": "true/false",
+        "training_strategy": {{
+            "approach": "SOTA training approach and techniques",
+        }}
     }},
     "preprocessing": [
         {{
@@ -101,19 +100,18 @@ IMPORTANT: Ensure the generated JSON is perfectly valid.
             "action": "...",
             "columns": ["..."],
             "strategy_or_details": "..."
-        }}
-        ...
+        }},
+        You can add more preprocessing steps if needed.
         {{
-            "step": ...,
+            "step": ,
             "action": "data_splitting",
             "train_size": 0.8,
             "validation_size": 0.2,
             "strategy": "simple_random",
             "random_state": 42,
-            "notes":
-        }},
-        ...
-    ],
+            "notes": "split data into train and validation sets"
+        }}
+    ]
 }}"""
 
     def build(self, description_analysis: Dict[str, Any], profiling_result: Dict[str, Any], model_suggestions: Dict[str, Any] | None = None, iteration_type: str | None = None) -> str:
