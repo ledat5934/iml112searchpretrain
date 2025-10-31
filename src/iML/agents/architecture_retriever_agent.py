@@ -12,7 +12,7 @@ class ArchitectureRetrieverAgent(BaseAgent):
     Retrieve candidate neural network architectures for custom NN design using Google ADK search.
     """
 
-    def __init__(self, config, manager, max_results: int = 5):
+    def __init__(self, config, manager, max_results: int = 1):
         super().__init__(config=config, manager=manager)
         self.max_results = max_results
 
