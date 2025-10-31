@@ -59,7 +59,7 @@ Example shape: [{{'model_name': str, 'example_code': str, 'model_link': str}}]
 def get_model_retriever_agent_instruction(context: cbx.ReadonlyContext) -> str:
     """Formats the retrieval prompt with state-backed variables, with optional retry hint."""
     task_summary = context.state.get("task_summary", "")
-    num_model_candidates = context.state.get("num_model_candidates", 1)
+    num_model_candidates = context.state.get("num_model_candidates", 10)
     base = MODEL_RETRIEVAL_INSTR.format(
         task_summary=task_summary,
         num_model_candidates=num_model_candidates,
