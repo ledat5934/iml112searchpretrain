@@ -170,13 +170,18 @@ Generate the corrected Python code:
             return """
 For Traditional ML algorithms (XGBoost, LightGBM, CatBoost):
 - Focus on feature engineering for tabular data
-- Try to extract features from image or text data if neccessary
+- **CRITICAL FOR IMAGE/VIDEO/AUDIO**: When extracting features from images/videos/audio using deep learning (CNNs, etc.), you MUST use batch-by-batch processing:
+  * Load image paths/IDs first, NOT the actual images
+  * Use a loop with batch_size (32-128): for i in range(0, len(data), batch_size)
+  * For each batch: load images → extract features → append to list → clear images from memory
+  * After all batches: concatenate feature lists
+  * DO NOT: create a single large numpy array of all images before feature extraction
 - Use categorical encoding (Label/One-hot/Target encoding)
 - Apply numerical feature scaling if needed (StandardScaler, MinMaxScaler)
 - Handle missing values with appropriate imputation strategies
 - Consider feature selection techniques (SelectKBest, RFE)
 - Ensure all features are numerical for tree-based models
-- Load entire dataset into memory since traditional ML can handle it efficiently
+- Load the resulting compact tabular features (after extraction) into memory for training
 """
         elif iteration_type == "custom_nn":
             return """

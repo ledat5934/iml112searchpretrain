@@ -62,7 +62,7 @@ Before generating the final JSON, consider:
 1. Identify the target variable and task type (classification, regression, etc.).
 2. Review each variable's type, statistics, and potential issues.
 3. Choose appropriate and reasonable preprocessing steps for that algorithm type.
-4. **For image/video/audio data with traditional ML**: Extract features using pre-trained CNNs in batches (batch_size=32-128), then load the extracted tabular features into memory for traditional ML training. Example strategy_or_details: "Extract image features using pre-trained CNN (EfficientNetB0) with batch_size=64 to avoid memory overflow. After feature extraction, load the resulting tabular features into memory for traditional ML training."
+4. **For image/video/audio data with traditional ML**: You MUST specify explicit batch-by-batch processing to prevent memory overflow. Example strategy_or_details: "Use batch_size=64 for feature extraction. Load image paths/IDs first (not the actual images). Process images in batches using a loop: for each batch, load only that batch of images into memory, extract features using pre-trained CNN (EfficientNetB0), store features, then clear images from memory. After processing all batches, concatenate all extracted features. The resulting compact tabular features can then be loaded into memory for traditional ML training. DO NOT load all images into a single numpy array before feature extraction."
 5. **For image/video/audio data with neural networks**: Use batch processing throughout (data loading, training, prediction) with generators. Example: "Use batch_size=32 for data loading and training with generators"
 6. Compile these specific actions into the required JSON format.
 
