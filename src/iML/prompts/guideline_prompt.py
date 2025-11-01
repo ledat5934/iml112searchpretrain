@@ -89,7 +89,11 @@ IMPORTANT: Ensure the generated JSON is perfectly valid.
         "IDs_in_submission_file_contain_file_extensions": "true/false",
         "training_strategy": {{
             "approach": "SOTA training approach and techniques",
-        }}
+        }},
+        "create_submission_file": {
+            "guideline": "guideline to create submission file",
+            "notes": "additional notes about submission file creation",
+        },
     }},
     "preprocessing": [
         {{
