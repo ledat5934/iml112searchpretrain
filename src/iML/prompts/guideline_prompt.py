@@ -87,29 +87,29 @@ IMPORTANT: Ensure the generated JSON is perfectly valid.
         "random_state": 42,
         "notes": "additional notes about model selection and training",
         "IDs_in_submission_file_contain_file_extensions": "true/false",
-        "training_strategy": {{
+        "training_strategy": {
             "approach": "SOTA training approach and techniques",
-        }},
+        },
         "create_submission_file": {
             "guideline": "guideline to create submission file",
             "notes": "additional notes about submission file creation",
-        },
+        }
     }},
     "preprocessing": [
-        {{
+        {
             "step": 1,
             "action": "action_type (e.g., impute_missing, encode_categorical, scale_numerical, feature_engineering, drop_columns, clean_data)",
             "columns": ["column_name_1", "column_name_2"],
             "strategy_or_details": "e.g., 'median', 'one_hot_encoder', 'standard_scaler', 'NewFeature = ColA / ColB', 'drop_reason'"
-        }},
-        {{
+        },
+        {
             "step": 2,
             "action": "...",
             "columns": ["..."],
             "strategy_or_details": "..."
-        }},
+        },
         You can add more preprocessing steps if needed.
-        {{
+        {
             "step": ,
             "action": "data_splitting",
             "train_size": 0.8,
@@ -117,7 +117,7 @@ IMPORTANT: Ensure the generated JSON is perfectly valid.
             "strategy": "simple_random",
             "random_state": 42,
             "notes": "split data into train and validation sets"
-        }}
+        }
     ]
 }}"""
 
