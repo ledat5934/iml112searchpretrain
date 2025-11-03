@@ -37,10 +37,13 @@ MODEL_RETRIEVAL_INSTR = """# Competition
 {task_summary}
 
 # Your task
-- List {num_model_candidates} stafte-of-the-art effective models and their example codes to win the above competition.
+- List {num_model_candidates} state-of-the-art effective models and their example codes to win the above competition.
 
 # Requirement
 - RETURN MODEL FOUND ON HUGGINGFACE (https://huggingface.co/models) ONLY.
+- **CRITICAL**: VERIFY that each model link exists and is accessible on HuggingFace before including it. DO NOT include models that return 404 or are not found.
+- Search for RECENT and ACTIVELY MAINTAINED models (check last update date).
+- Prefer models with good documentation and example usage.
 - The example code should be concise and simple.
 - You must provide an example code, i.e., do not just mention GitHubs or papers.
 
@@ -52,7 +55,8 @@ Output rules:
 - Output ONLY the JSON array (no explanations, no markdown).
 - Do NOT wrap the output in any code fences (e.g., ```json, ```python, or ```).
 - Ensure each item has runnable Python in 'example_code'.
-- If uncertain, return a single best candidate.
+- ONLY include models that you have VERIFIED exist on HuggingFace.
+- If uncertain, return a single best candidate that you are CONFIDENT exists.
 Example shape: [{{'model_name': str, 'example_code': str, 'model_link': str}}]
 """
 
