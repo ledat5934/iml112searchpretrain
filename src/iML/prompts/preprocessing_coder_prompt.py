@@ -230,8 +230,8 @@ For Pretrained Models (preferably PyTorch-based):
             batch_instruction = "IMPORTANT: Preprocess data by batch using generators to reduce memory usage for neural network training."
             data_format = "5. Create a function `preprocess_data()` that takes a dictionary of file paths and returns a tuple of **generators**, one for each data split (e.g., train_generator, val_generator, test_generator)."
         elif iteration_type == "pretrained":
-            batch_instruction = "IMPORTANT: Preprocess data by batch using generators, ensuring compatibility with pretrained model requirements."
-            data_format = "5. Create a function `preprocess_data()` that takes a dictionary of file paths and returns a tuple of **generators**, one for each data split (e.g., train_generator, val_generator, test_generator)."
+            batch_instruction = "IMPORTANT: For pretrained models, return PyTorch DataLoader objects with FINITE datasets. Use torch.utils.data.TensorDataset or custom Dataset (NOT IterableDataset). Each DataLoader must have a defined length."
+            data_format = "5. Create a function `preprocess_data()` that takes a dictionary of file paths and returns a tuple of **PyTorch DataLoader objects** with FINITE length, one for each data split (e.g., train_loader, val_loader, test_loader). CRITICAL: Use torch.utils.data.Dataset (with __len__), NOT IterableDataset."
         else:
             # Default behavior
             batch_instruction = "IMPORTANT: Preprocess data by batch using generators to reduce memory usage."

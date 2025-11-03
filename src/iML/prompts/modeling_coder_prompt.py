@@ -323,14 +323,23 @@ if __name__ == "__main__":
         
         elif iteration_type == "pretrained":
             return """## IMPORTANT DATA HANDLING
-The provided preprocessing code's `preprocess_data` function returns **a tuple of generators** (e.g., `train_gen, val_gen, test_gen`) formatted for pretrained models. Your code must handle these generators efficiently.
+The provided preprocessing code's `preprocess_data` function returns **a tuple of PyTorch DataLoader objects** (e.g., `train_loader, val_loader, test_loader`) with FINITE length formatted for pretrained models.
 
-### Pretrained Model Data Handling (PyTorch preferred):
-- **For pretrained models**: Use generators with PyTorch DataLoader and HuggingFace datasets
-- **Logic**: Convert generators to PyTorch DataLoader format for efficient batching
-- **PyTorch Integration**: Use torch.utils.data.DataLoader, transformers.Trainer, or custom PyTorch training loops
-- **HuggingFace**: Prefer transformers library with PyTorch backend over TensorFlow
-- **Compatibility**: Ensure data format matches PyTorch tensor requirements and model input specifications
+### Pretrained Model Data Handling (PyTorch):
+- **For pretrained models**: Use the provided PyTorch DataLoader objects directly
+- **CRITICAL**: DataLoaders have FINITE length (len(train_loader) returns number of batches). Your training loop MUST iterate exactly once per epoch.
+- **Training Logic**: Use standard PyTorch training pattern:
+  ```python
+  for epoch in range(num_epochs):
+      for batch_idx, batch in enumerate(train_loader):
+          # Training step
+          # This loop will STOP after len(train_loader) batches
+  ```
+- **DO NOT**: Create infinite loops or IterableDataset without proper stopping conditions
+- **PyTorch Integration**: Use torch.nn.Module, torch.optim, standard training loops
+- **HuggingFace**: Prefer transformers library with PyTorch backend
+- **Validation**: Iterate through val_loader ONCE per validation check
+- **Testing**: Iterate through test_loader ONCE for final predictions
 
 ## CODE STRUCTURE EXAMPLE:
 ```python
@@ -341,44 +350,78 @@ from transformers import AutoModel, AutoTokenizer, AutoConfig
 from sklearn.metrics import accuracy_score
 import sys
 
-def train_and_predict(train_gen, val_gen, test_gen):
+def train_and_predict(train_loader, val_loader, test_loader):
+    # CRITICAL: train_loader, val_loader, test_loader are PyTorch DataLoader with FINITE length
+    # len(train_loader) gives number of batches
+    
     # Load pretrained model (adjust based on your task type)
     # TODO: Replace "pretrained_model_name" with actual model name based on guideline
     model_name = "pretrained_model_name" 
     model = AutoModel.from_pretrained(model_name)
     tokenizer = AutoTokenizer.from_pretrained(model_name)
-    
-    # Add task-specific head
-    num_classes = 2  # TODO: Adjust based on your problem
-    classifier = torch.nn.Linear(model.config.hidden_size, num_classes)
-    
-    # Setup training
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model.to(device)
-    classifier.to(device)
     
-    # TODO: Implement fine-tuning loop
-    # Strategy: First freeze the model and fine-tune the classifier, then unfreeze the model and fine-tune both
-    # Example:
-    # 1. Freeze model parameters: for param in model.parameters(): param.requires_grad = False
-    # 2. Train classifier only for few epochs
-    # 3. Unfreeze model: for param in model.parameters(): param.requires_grad = True  
-    # 4. Fine-tune both model and classifier with lower learning rate
+    # Setup optimizer
+    optimizer = torch.optim.AdamW(model.parameters(), lr=2e-5)
+    num_epochs = 3
     
-    # Validation evaluation
+    # Training loop with FINITE iterations
+    print(f"Training for {{num_epochs}} epochs, {{len(train_loader)}} batches per epoch...")
+    for epoch in range(num_epochs):
+        model.train()
+        for batch_idx, batch in enumerate(train_loader):
+            # This loop will STOP after len(train_loader) batches
+            # Extract features and labels from batch
+            # TODO: Adjust based on your data format
+            inputs, labels = batch  # Example unpacking
+            inputs = inputs.to(device)
+            labels = labels.to(device)
+            
+            # Forward pass and training
+            optimizer.zero_grad()
+            outputs = model(inputs)
+            loss = torch.nn.functional.cross_entropy(outputs, labels)
+            loss.backward()
+            optimizer.step()
+            
+            if batch_idx % 10 == 0:
+                print(f"Epoch {{epoch+1}}/{{num_epochs}}, Batch {{batch_idx}}/{{len(train_loader)}}, Loss: {{loss.item():.4f}}")
+        
+        print(f"Epoch {{epoch+1}} completed.")
+    
+    # Validation - iterate ONCE through val_loader
     print("Evaluating on validation set...")
-    val_predictions = []  # TODO: Replace with actual validation predictions from model
-    val_true = []  # TODO: Replace with actual validation labels from val_gen
-    # Example: Iterate through val_gen, get predictions from model+classifier
+    model.eval()
+    val_predictions = []
+    val_true = []
+    with torch.no_grad():
+        for batch in val_loader:
+            # This loop will STOP after len(val_loader) batches
+            inputs, labels = batch
+            inputs = inputs.to(device)
+            outputs = model(inputs)
+            preds = torch.argmax(outputs, dim=1)
+            val_predictions.extend(preds.cpu().numpy())
+            val_true.extend(labels.numpy())
     
-    val_score = accuracy_score(val_true, val_predictions)  # TODO: Use appropriate metric
+    val_score = accuracy_score(val_true, val_predictions)
     print(f"Validation Score: {{val_score:.4f}}")
     
-    # Test predictions  
+    # Test predictions - iterate ONCE through test_loader
     print("Making predictions on test set...")
-    test_predictions = []  # TODO: Replace with actual test predictions from model
-    test_ids = []  # TODO: Replace with actual test IDs from test_gen
-    # Example: Iterate through test_gen, get predictions from model+classifier
+    test_predictions = []
+    test_ids = []
+    with torch.no_grad():
+        for batch in test_loader:
+            # This loop will STOP after len(test_loader) batches
+            # TODO: Adjust based on your data format
+            inputs, ids = batch  # Test loader may return inputs and IDs
+            inputs = inputs.to(device)
+            outputs = model(inputs)
+            preds = torch.argmax(outputs, dim=1)
+            test_predictions.extend(preds.cpu().numpy())
+            test_ids.extend(ids)
     
     return test_predictions, test_ids
 
@@ -386,12 +429,12 @@ if __name__ == "__main__":
     try:
         file_paths = {file_paths_main}
         
-        # Get data generators
-        train_gen, val_gen, test_gen = preprocess_data(file_paths)
-        print("Data generators initialized successfully.")
+        # Get PyTorch DataLoaders (FINITE length)
+        train_loader, val_loader, test_loader = preprocess_data(file_paths)
+        print(f"Data loaders initialized: train={{len(train_loader)}} batches, val={{len(val_loader)}} batches, test={{len(test_loader)}} batches")
         
         # Train and predict
-        predictions, test_ids = train_and_predict(train_gen, val_gen, test_gen)
+        predictions, test_ids = train_and_predict(train_loader, val_loader, test_loader)
         
         # Create submission
         submission_df = pd.DataFrame({{'ID_COLUMN_NAME': test_ids, 'PREDICTION_COLUMN_NAME': predictions}})
