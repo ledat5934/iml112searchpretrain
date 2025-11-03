@@ -108,6 +108,7 @@ IMPORTANT: Ensure the generated JSON is perfectly valid.
             "columns": ["..."],
             "strategy_or_details": "..."
         }},
+        #Add some more preprocessing step here if neccessary.
         {{
             "step": 3,
             "action": "data_splitting",
