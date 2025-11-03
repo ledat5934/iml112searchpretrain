@@ -132,25 +132,37 @@ class ModelRetrieverAgent(BaseAgent):
     def _validate_huggingface_model(self, model_link: str) -> bool:
         """Validate if a HuggingFace model exists by checking the model page."""
         if not model_link or "huggingface.co" not in model_link:
+            logger.warning(f"Invalid HuggingFace link format: {model_link}")
             return False
         
         try:
             import requests
-            response = requests.head(model_link, timeout=5, allow_redirects=True)
-            # 200 OK means model exists, 404 means not found
+            response = requests.head(model_link, timeout=10, allow_redirects=True)
+            
+            # Only 200 OK is considered valid
             if response.status_code == 200:
+                logger.debug(f"Model verified (200 OK): {model_link}")
                 return True
             elif response.status_code == 404:
-                logger.warning(f"Model not found on HuggingFace: {model_link}")
+                logger.warning(f"Model not found (404): {model_link}")
+                return False
+            elif response.status_code == 401:
+                logger.warning(f"Model unauthorized/private (401): {model_link}")
+                return False  # Treat 401 as invalid - can't use private models
+            elif response.status_code == 403:
+                logger.warning(f"Model access forbidden (403): {model_link}")
                 return False
             else:
-                # For other status codes, give benefit of doubt
-                logger.warning(f"Could not verify model (status {response.status_code}): {model_link}")
-                return True
+                # For other status codes (500, 502, etc.), still reject
+                logger.warning(f"Model validation failed (status {response.status_code}): {model_link}")
+                return False
+        except requests.exceptions.Timeout:
+            logger.warning(f"Timeout validating model (>10s): {model_link}")
+            return False
         except Exception as e:
             logger.warning(f"Error validating model {model_link}: {e}")
-            # If validation fails due to network/other issues, don't filter out
-            return True
+            # Network errors - reject to be safe
+            return False
 
     def __call__(self) -> Dict[str, Any]:
         self.manager.log_agent_start("ModelRetrieverAgent: retrieving pretrained SOTA models via ADK...")
