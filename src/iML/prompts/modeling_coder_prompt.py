@@ -48,10 +48,11 @@ The following preprocessing code, including a function `preprocess_data(file_pat
 6.  Follow the modeling guidelines for algorithm choice.
 7.  Do not use extensive hyperparameter tuning unless specified. Keep the code efficient.
 8.  Limit comments in the code.
-9.  The submission file must have the same structure (number of columns) as the sample submission file provided in the dataset, but may have different ID. You have to use the test data to generate predictions and your right submission file. In some cases, you must browse the test image folder to get the IDs and data.
-10. Your final COMPLETE Python code should have only ONE main function. If there are duplicate main function, remove the duplicates and keep only one main function.
-11. Sample submission file given is for template reference (Columns) only. You have to use the test data or test file to generate predictions and your right submission file. In some cases, you must browse the test image folder to get the IDs and data.
-12. **REPRODUCIBILITY & VALIDATION**: 
+9.  **CRITICAL - ID FORMAT IN SUBMISSION**: Check the modeling guidelines for the field 'IDs_in_submission_file_contain_file_extensions'. If TRUE, include file extensions in IDs (e.g., 'image001.jpg'). If FALSE, use IDs without extensions (e.g., 'image001'). Ensure ID format matches exactly what's expected in the submission file.
+10. The submission file must have the same structure (number of columns) as the sample submission file provided in the dataset, but may have different ID. You have to use the test data to generate predictions and your right submission file. In some cases, you must browse the test image folder to get the IDs and data.
+11. Your final COMPLETE Python code should have only ONE main function. If there are duplicate main function, remove the duplicates and keep only one main function.
+12. Sample submission file given is for template reference (Columns) only. You have to use the test data or test file to generate predictions and your right submission file. In some cases, you must browse the test image folder to get the IDs and data.
+13. **REPRODUCIBILITY & VALIDATION**: 
     - Always use random_state=42 for ALL random operations (model initialization, etc.)
     - Use the validation set for model evaluation (no cross-validation needed)
     - Print the validation score in the format: "Validation Score: <score_value>"

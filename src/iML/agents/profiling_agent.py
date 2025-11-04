@@ -237,8 +237,12 @@ class ProfilingAgent(BaseAgent):
         """Identify potential ID columns in the dataframe."""
         id_columns = []
         
-        # Common ID column names
-        id_patterns = ['id', 'ID', 'Id', 'image_id', 'file_id', 'filename', 'file_name', 'image_name']
+        # Common ID column names (exact matches)
+        id_patterns = ['id', 'ID', 'Id', 'image_id', 'file_id', 'filename', 'file_name', 'image_name', 
+                      'clip', 'video', 'audio', 'sample', 'record', 'item']
+        
+        # Partial match patterns
+        partial_patterns = ['id', 'filename', 'file_name', 'image', 'clip', 'video', 'audio', 'sample', 'name']
         
         for col in df.columns:
             # Check exact matches
@@ -248,7 +252,7 @@ class ProfilingAgent(BaseAgent):
                 
             # Check partial matches
             col_lower = col.lower()
-            if any(pattern.lower() in col_lower for pattern in ['id', 'filename', 'file_name', 'image']):
+            if any(pattern.lower() in col_lower for pattern in partial_patterns):
                 # Additional check: should have mostly unique values
                 if df[col].nunique() / len(df) > 0.8:  # More than 80% unique
                     id_columns.append(col)

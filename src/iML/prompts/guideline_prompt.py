@@ -86,12 +86,12 @@ IMPORTANT: Ensure the generated JSON is perfectly valid.
         "eval_metrics": ["metric"],
         "random_state": 42,
         "notes": "additional notes about model selection and training",
-        "IDs_in_submission_file_contain_file_extensions": "true/false",
+        "IDs_in_submission_file_contain_file_extensions": true/false (MUST match the 'Submission format detected' from ID FORMAT ANALYSIS section above. If submission requires file extensions, set true; otherwise false. If no ID FORMAT ANALYSIS provided, infer from submission file description),
         "training_strategy": {{
             "approach": "SOTA training approach and techniques"
         }},
         "create_submission_file": {{
-            "guideline": "guideline to create submission file",
+            "guideline": "guideline to create submission file. CRITICAL: Ensure IDs in submission match the format specified in IDs_in_submission_file_contain_file_extensions field (with or without file extensions like .jpg, .png, .mp4, etc.)",
             "notes": "additional notes about submission file creation"
         }}
     }},
@@ -323,7 +323,7 @@ IMPORTANT: Ensure the generated JSON is perfectly valid.
         section_lines.extend([
             "",
             "**PREPROCESSING NOTE**: If ID format mismatch detected, ensure preprocessing handles ID transformation correctly.",
-            "**MODELING NOTE**: When creating submission files, ensure ID format matches exactly what's expected.",
+            "**MODELING NOTE**: You MUST set 'IDs_in_submission_file_contain_file_extensions' field in the modeling section based on the 'Submission format detected' above. When creating submission files, ensure ID format matches exactly (with or without file extensions).",
             ""
         ])
         
