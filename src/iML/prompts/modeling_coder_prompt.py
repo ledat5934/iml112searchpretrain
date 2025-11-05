@@ -57,7 +57,7 @@ The following preprocessing code, including a function `preprocess_data(file_pat
     - Use the validation set for model evaluation (no cross-validation needed)
     - Print the validation score in the format: "Validation Score: <score_value>"
     - Use the evaluation metrics specified in the modeling guidelines
-
+14. Pay attention to the create_submission guideline in the modeling guidelines to create valid submission, for example, if the guideline says that '1_2_1' for image 1, row 2, column 1, the index of row and column should begin with 1, not 0.
 """
 
     def build(self, guideline: Dict, description: Dict, preprocessing_code: str, previous_code: str = None, error_message: str = None, iteration_type: str = None) -> str:
