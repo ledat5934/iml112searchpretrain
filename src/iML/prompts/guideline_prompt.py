@@ -88,7 +88,7 @@ IMPORTANT: Ensure the generated JSON is perfectly valid.
         "notes": "additional notes about model selection and training",
         "IDs_in_submission_file_contain_file_extensions": true/false (MUST match the 'Submission format detected' from ID FORMAT ANALYSIS section above. If submission requires file extensions, set true; otherwise false. If no ID FORMAT ANALYSIS provided, infer from submission file description),
         "training_strategy": {{
-            "approach": "SOTA training approach and techniques", use large number of epoches with early stopping.
+            "approach": "SOTA training approach and techniques"
         }},
         "create_submission_file": {{
             "guideline": "guideline to create submission file. CRITICAL: Ensure IDs in submission match the format specified in IDs_in_submission_file_contain_file_extensions field (with or without file extensions like .jpg, .png, .mp4, etc.)",
