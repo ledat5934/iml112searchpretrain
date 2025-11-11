@@ -137,7 +137,7 @@ For Traditional ML algorithms:
 - Try to extract features from image or text data if neccessary
 - Use early stopping for gradient boosting methods
 - Optimize for tabular data characteristics
-- Use optuna library for hyperparameter tuning, limit the time of the hypertuning to 3600 second.
+- #IMPORTANT: YOU MUST use optuna library for hyperparameter tuning, limit the time of the hypertuning to 3600 second.
 """
         elif iteration_type == "custom_nn":
             return """
