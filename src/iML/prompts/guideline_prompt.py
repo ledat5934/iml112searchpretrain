@@ -110,7 +110,7 @@ IMPORTANT: Ensure the generated JSON is perfectly valid.
         }},
         #Add some more preprocessing step here if neccessary.
         {{
-            "step": 3,
+            "step": ,
             "action": "data_splitting",
             "train_size": 0.8,
             "validation_size": 0.2,
