@@ -208,11 +208,22 @@ class ModelRetrieverAgent(BaseAgent):
                 else:
                     logger.info(f"✗ Skipping invalid/non-existent model: {model_name}")
 
-        # If no results after validation, return error to stop iteration (no fallback)
+        # If no results after validation, return empty suggestions (let LLM choose model itself)
         if not cleaned_models:
-            logger.error(f"Searched {total_to_search} candidates but found 0 valid models after validation.")
-            self.manager.log_agent_end("ModelRetrieverAgent: no valid SOTA candidates — signaling failure.")
-            return {"error": "sota_search_failed", "message": f"Searched {total_to_search} models but none were valid/accessible"}
+            logger.warning(f"Searched {total_to_search} candidates but found 0 valid models after validation.")
+            logger.info("ModelRetrieverAgent: No valid SOTA candidates found — returning empty suggestions. LLM will choose model itself.")
+            self.manager.log_agent_end("ModelRetrieverAgent: No valid models found, returning empty suggestions.")
+            # Return empty suggestions instead of error to allow pipeline to continue
+            suggestions: Dict[str, Any] = {
+                "sota_models": [],  # Empty list
+                "source": "sota-search",
+                "note": "SOTA search found no valid candidates — LLM will choose model",
+            }
+            self.manager.save_and_log_states(
+                json.dumps(suggestions, indent=2, ensure_ascii=False),
+                "model_retrieval.json",
+            )
+            return suggestions
 
         # Prepare suggestions payload with only requested fields
         suggestions: Dict[str, Any] = {

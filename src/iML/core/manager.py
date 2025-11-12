@@ -233,97 +233,106 @@ class Manager:
                 if timeout_occurred.is_set():
                     raise IterationTimeoutError("Iteration timeout occurred before model retrieval")
                 model_suggestions = self.model_retriever_agent()
-                # Stop iteration immediately if retrieval failed or empty
-                if (not model_suggestions) or ("error" in model_suggestions) or (not model_suggestions.get("sota_models")):
-                    logger.error("Pretrained iteration aborted: SOTA search failed or returned no candidates.")
+                
+                # Check for critical errors (not just empty results)
+                if not model_suggestions:
+                    logger.error("Pretrained iteration aborted: model_retriever_agent returned None.")
                     return False
+                if "error" in model_suggestions:
+                    logger.error(f"Pretrained iteration aborted: {model_suggestions.get('message', 'Unknown error')}")
+                    return False
+                    
                 self.model_suggestions = model_suggestions
-                logger.info("Model retrieval completed for pretrained iteration.")
-
-                # Candidate-wise loop: for each SOTA model, run guideline -> preprocessing -> modeling -> assembly
                 models = self.model_suggestions.get("sota_models", [])
-                any_success = False
-                parent_iter_dir = Path(self.output_folder)
-                first_success_idx = None
-                for idx, cand in enumerate(models, start=1):
-                    if timeout_occurred.is_set():
-                        raise IterationTimeoutError("Iteration timeout occurred before guideline generation")
-                    # Narrow suggestions to a single candidate
-                    self.model_suggestions = {"sota_models": [cand], "source": model_suggestions.get("source", "sota-search")}
+                
+                # If no valid candidates found, fall back to LLM choosing model itself
+                if not models:
+                    logger.warning("No valid SOTA candidates found. Falling back to single guideline generation (LLM will choose model).")
+                    # Continue with standard flow (non-candidate loop) - skip to line 339
+                else:
+                    # Candidate-wise loop: for each SOTA model, run guideline -> preprocessing -> modeling -> assembly
+                    any_success = False
+                    parent_iter_dir = Path(self.output_folder)
+                    first_success_idx = None
+                    for idx, cand in enumerate(models, start=1):
+                        if timeout_occurred.is_set():
+                            raise IterationTimeoutError("Iteration timeout occurred before guideline generation")
+                        # Narrow suggestions to a single candidate
+                        self.model_suggestions = {"sota_models": [cand], "source": model_suggestions.get("source", "sota-search")}
 
-                    # Prepare candidate-specific output directory and switch context
-                    candidate_dir = parent_iter_dir / f"candidate_{idx}"
-                    candidate_dir.mkdir(parents=True, exist_ok=True)
-                    original_output_folder = self.output_folder
-                    self.output_folder = str(candidate_dir)
+                        # Prepare candidate-specific output directory and switch context
+                        candidate_dir = parent_iter_dir / f"candidate_{idx}"
+                        candidate_dir.mkdir(parents=True, exist_ok=True)
+                        original_output_folder = self.output_folder
+                        self.output_folder = str(candidate_dir)
 
-                    # Guideline
-                    guideline = self.guideline_agent(iteration_type=iteration_type)
-                    if "error" in guideline:
-                        logger.error(f"Guideline generation failed for candidate {idx}: {guideline['error']}")
-                        # Restore output folder before continuing
-                        self.output_folder = str(original_output_folder)
-                        continue
-                    self.guideline = guideline
-                    try:
-                        # Save guideline inside candidate states folder
-                        self.save_and_log_states(json.dumps(guideline, ensure_ascii=False, indent=2), "guideline/guideline_response.json")
-                    except Exception:
-                        pass
-
-                    # Preprocessing
-                    if timeout_occurred.is_set():
-                        raise IterationTimeoutError("Iteration timeout occurred before preprocessing")
-                    preprocessing_code_result = self.preprocessing_coder_agent(iteration_type=iteration_type)
-                    if preprocessing_code_result.get("status") == "failed":
-                        logger.error(f"Preprocessing failed for candidate {idx}: {preprocessing_code_result.get('error')}")
-                        # Restore output folder before continuing
-                        self.output_folder = str(original_output_folder)
-                        continue
-                    self.preprocessing_code = preprocessing_code_result.get("code")
-
-                    # Modeling
-                    if timeout_occurred.is_set():
-                        raise IterationTimeoutError("Iteration timeout occurred before modeling")
-                    modeling_code_result = self.modeling_coder_agent(iteration_type=iteration_type)
-                    if modeling_code_result.get("status") == "failed":
-                        logger.error(f"Modeling failed for candidate {idx}: {modeling_code_result.get('error')}")
-                        # Restore output folder before continuing
-                        self.output_folder = str(original_output_folder)
-                        continue
-                    self.modeling_code = modeling_code_result.get("code")
-
-                    # Assembly
-                    if timeout_occurred.is_set():
-                        raise IterationTimeoutError("Iteration timeout occurred before assembly")
-                    assembler_result = self.assembler_agent(iteration_type=iteration_type)
-                    if assembler_result.get("status") == "failed":
-                        logger.error(f"Assembly failed for candidate {idx}: {assembler_result.get('error')}")
-                        # Restore output folder before continuing
-                        self.output_folder = str(original_output_folder)
-                        continue
-                    # Require submission.csv to consider candidate successful
-                    cand_submission = candidate_dir / "submission.csv"
-                    if cand_submission.exists():
-                        any_success = True
-                        # Copy submission back to iteration root for compatibility and archiving
+                        # Guideline
+                        guideline = self.guideline_agent(iteration_type=iteration_type)
+                        if "error" in guideline:
+                            logger.error(f"Guideline generation failed for candidate {idx}: {guideline['error']}")
+                            # Restore output folder before continuing
+                            self.output_folder = str(original_output_folder)
+                            continue
+                        self.guideline = guideline
                         try:
-                            # archive as submission_cand_{idx}.csv at iteration root
-                            dst_archive = parent_iter_dir / f"submission_cand_{idx}.csv"
-                            shutil.copy2(cand_submission, dst_archive)
-                            # set the first successful as iteration-level submission
-                            if first_success_idx is None:
-                                shutil.copy2(cand_submission, parent_iter_dir / "submission.csv")
-                                first_success_idx = idx
-                        except Exception as e:
-                            logger.warning(f"Could not copy submission for candidate {idx}: {e}")
-                    else:
-                        logger.error(f"Candidate {idx} reported success but produced no submission.csv; treating as failure.")
+                            # Save guideline inside candidate states folder
+                            self.save_and_log_states(json.dumps(guideline, ensure_ascii=False, indent=2), "guideline/guideline_response.json")
+                        except Exception:
+                            pass
 
-                    # Restore output folder for next candidate
-                    self.output_folder = str(original_output_folder)
+                        # Preprocessing
+                        if timeout_occurred.is_set():
+                            raise IterationTimeoutError("Iteration timeout occurred before preprocessing")
+                        preprocessing_code_result = self.preprocessing_coder_agent(iteration_type=iteration_type)
+                        if preprocessing_code_result.get("status") == "failed":
+                            logger.error(f"Preprocessing failed for candidate {idx}: {preprocessing_code_result.get('error')}")
+                            # Restore output folder before continuing
+                            self.output_folder = str(original_output_folder)
+                            continue
+                        self.preprocessing_code = preprocessing_code_result.get("code")
 
-                return any_success
+                        # Modeling
+                        if timeout_occurred.is_set():
+                            raise IterationTimeoutError("Iteration timeout occurred before modeling")
+                        modeling_code_result = self.modeling_coder_agent(iteration_type=iteration_type)
+                        if modeling_code_result.get("status") == "failed":
+                            logger.error(f"Modeling failed for candidate {idx}: {modeling_code_result.get('error')}")
+                            # Restore output folder before continuing
+                            self.output_folder = str(original_output_folder)
+                            continue
+                        self.modeling_code = modeling_code_result.get("code")
+
+                        # Assembly
+                        if timeout_occurred.is_set():
+                            raise IterationTimeoutError("Iteration timeout occurred before assembly")
+                        assembler_result = self.assembler_agent(iteration_type=iteration_type)
+                        if assembler_result.get("status") == "failed":
+                            logger.error(f"Assembly failed for candidate {idx}: {assembler_result.get('error')}")
+                            # Restore output folder before continuing
+                            self.output_folder = str(original_output_folder)
+                            continue
+                        # Require submission.csv to consider candidate successful
+                        cand_submission = candidate_dir / "submission.csv"
+                        if cand_submission.exists():
+                            any_success = True
+                            # Copy submission back to iteration root for compatibility and archiving
+                            try:
+                                # archive as submission_cand_{idx}.csv at iteration root
+                                dst_archive = parent_iter_dir / f"submission_cand_{idx}.csv"
+                                shutil.copy2(cand_submission, dst_archive)
+                                # set the first successful as iteration-level submission
+                                if first_success_idx is None:
+                                    shutil.copy2(cand_submission, parent_iter_dir / "submission.csv")
+                                    first_success_idx = idx
+                            except Exception as e:
+                                logger.warning(f"Could not copy submission for candidate {idx}: {e}")
+                        else:
+                            logger.error(f"Candidate {idx} reported success but produced no submission.csv; treating as failure.")
+
+                        # Restore output folder for next candidate
+                        self.output_folder = str(original_output_folder)
+
+                    return any_success
             else:
                 # Ensure other iterations are not influenced by retrieval results
                 if hasattr(self, "model_suggestions"):
