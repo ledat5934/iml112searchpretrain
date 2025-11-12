@@ -137,7 +137,7 @@ For Traditional ML algorithms:
 - Try to extract features from image or text data if neccessary
 - Use early stopping for gradient boosting methods
 - Optimize for tabular data characteristics
-- Use optuna library for hyperparameter tuning, limit the time of the hypertuning to 3600 second.
+- #IMPORTANT: YOU MUST use optuna library for hyperparameter tuning, limit the time of the hypertuning to 3600 second.
 """
         elif iteration_type == "custom_nn":
             return """
@@ -150,7 +150,7 @@ For Custom Neural Networks:
 - Include model checkpointing for best weights
 - Handle overfitting with regularization techniques
 - Monitor training/validation loss curves
-- Use large number of epochs with early stopping = 3
+- You should use large number of epochs(15, 20, ...) with early stopping = 3
 """
         elif iteration_type == "custom_nn_search":
             return """
@@ -165,7 +165,7 @@ For Custom Neural Networks with Architecture Search:
 - Include model checkpointing for best weights
 - Handle overfitting with regularization techniques
 - Monitor training/validation loss curves
-- Use large number of epochs with early stopping = 3
+- You should use large number of epochs(15, 20, ...) with early stopping = 3
 """
         elif iteration_type == "pretrained":
             return """
@@ -180,7 +180,7 @@ For Pretrained Models (prioritize PyTorch):
 - Use PyTorch-specific optimizers and schedulers
 - Implement gradual unfreezing strategy if needed
 - Prefer torch.nn.functional and PyTorch ecosystem
-- Use large number of epochs with early stopping = 3
+- You should use large number of epochs(15, 20, ...) with early stopping = 3
 """
         else:
             return ""
