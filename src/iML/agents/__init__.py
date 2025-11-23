@@ -12,6 +12,7 @@ from .model_retriever_agent import ModelRetrieverAgent
 from .architecture_retriever_agent import ArchitectureRetrieverAgent
 from .comparison_agent import ComparisonAgent
 from .debug_agent import DebugAgent
+from .monolithic_coder_agent import MonolithicCoderAgent
 
 __all__ = [
     "BaseAgent",
@@ -26,4 +27,5 @@ __all__ = [
     "ArchitectureRetrieverAgent",
     "ComparisonAgent",
     "DebugAgent",
+    "MonolithicCoderAgent",
 ]

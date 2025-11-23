@@ -47,5 +47,8 @@ preprocessing_coder:
 modeling_coder:
   <<: *default_llm
 
+monolithic_coder:
+  <<: *default_llm
+
 assembler:
   <<: *default_llm

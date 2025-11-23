@@ -89,7 +89,10 @@ class PreprocessingCoderAgent(BaseAgent):
                     f"---ATTEMPT {attempt+1}---\nDATASET PATHS:\n{dataset_paths}\n\nCODE:\n{code_to_execute}\n\nERROR:\n{error_to_log}",
                     f"preprocessing/attempt_{attempt+1}/failed.log"
                 )
-                # Two-step LLM debug: summary (no search) -> refine (with google_search)
+                if not self.manager.is_debug_enabled():
+                    logger.info("DebugAgent disabled in static ablation mode; retrying via LLM.")
+                    continue
+
                 filename = "code_generated"  # consistent with manager.execute_code script name
                 task_desc = (self.manager.description_analysis or {}).get('task_description') or json.dumps(self.manager.description_analysis)
                 ok, patched, meta = self.manager.debug_agent.llm_debug_fix(
@@ -101,12 +104,10 @@ class PreprocessingCoderAgent(BaseAgent):
                     task_description=task_desc,
                 )
                 if ok:
-                    # DebugAgent already executed the refined code; no need to re-run
                     logger.info("Preprocessing code executed successfully after debug fixes (no re-run).")
                     self.manager.save_and_log_states(patched, "preprocessing/final_preprocessing_code.py")
                     self.manager.log_agent_end("Completed preprocessing code generation.")
                     return {"status": "success", "code": patched}
-                # If not ok, continue with patched as next candidate to allow LLM loop to see updated code
                 code_to_execute = patched
 
         logger.error(f"Unable to generate working preprocessing code after {self.max_retries} attempts.")

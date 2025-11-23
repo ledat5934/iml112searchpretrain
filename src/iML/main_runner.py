@@ -22,7 +22,15 @@ def timeout_handler(signum, frame):
     logger.error("Pipeline execution timed out.")
     raise PipelineTimeoutError("Pipeline execution exceeded the time limit.")
 
-def run_automl_pipeline(input_data_folder: str, output_folder: str = None, config_path: str = "configs/default.yaml", checkpoint_mode: str = "full", checkpoint_action: str = "run", single_iteration: str = None):
+def run_automl_pipeline(
+    input_data_folder: str,
+    output_folder: str = None,
+    config_path: str = "configs/default.yaml",
+    checkpoint_mode: str = "full",
+    checkpoint_action: str = "run",
+    single_iteration: str = None,
+    ablation_variant: str = None,
+):
     """
     Main function to set up the environment and run the entire pipeline.
     
@@ -74,10 +82,20 @@ def run_automl_pipeline(input_data_folder: str, output_folder: str = None, confi
             input_data_folder=input_data_folder,
             output_folder=str(output_dir),  # Pass as string for consistency
             config=config,
+            ablation_variant=ablation_variant,
         )
 
         # 5. Start the pipeline run based on checkpoint mode
-        if checkpoint_mode == "full":
+        if ablation_variant:
+            if checkpoint_mode != "full":
+                logger.error("Ablation variants can only be run in --checkpoint-mode full.")
+                return
+            if not single_iteration:
+                logger.error("Please provide --single-iteration when running an ablation variant.")
+                return
+            manager.run_pipeline_ablation(ablation_variant, single_iteration)
+            return
+        elif checkpoint_mode == "full":
             if single_iteration:
                 # Run single iteration with specified approach
                 manager.run_pipeline_single_iteration(single_iteration)

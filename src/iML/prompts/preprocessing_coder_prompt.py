@@ -92,6 +92,7 @@ if __name__ == "__main__":
     def build(self, guideline: Dict, description: Dict, previous_code: str = None, error_message: str = None, iteration_type: str = None) -> str:
         """Build prompt to generate preprocessing code."""
 
+        guideline = guideline or {}
         preprocessing_guideline = guideline.get('preprocessing', {})
         target_info = guideline.get("target_identification", {})
 

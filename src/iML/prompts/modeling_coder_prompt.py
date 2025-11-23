@@ -63,6 +63,7 @@ The following preprocessing code, including a function `preprocess_data(file_pat
     def build(self, guideline: Dict, description: Dict, preprocessing_code: str, previous_code: str = None, error_message: str = None, iteration_type: str = None) -> str:
         """Build prompt to generate modeling code."""
         
+        guideline = guideline or {}
         modeling_guideline = guideline.get('modeling', {})
         
         # Add iteration-specific modeling guidance

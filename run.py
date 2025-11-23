@@ -68,6 +68,14 @@ Examples:
         default=None,
         help="Run only a single iteration approach: 'traditional' (XGBoost, LightGBM), 'custom_nn' (PyTorch no search), 'custom_nn_search' (PyTorch with architecture search), or 'pretrained' (HuggingFace models)"
     )
+    parser.add_argument(
+        "--ablation-variant",
+        choices=["reactive", "mono", "static"],
+        default=None,
+        help="Run the pipeline in ablation mode to disable specific design principles: "
+             "'reactive' (no Guideline agent), 'mono' (monolithic coder without modular assembly), "
+             "'static' (no intermediate execution/runtime verification)."
+    )
     
     args = parser.parse_args()
     
@@ -79,6 +87,7 @@ Examples:
         checkpoint_mode=args.checkpoint_mode,
         checkpoint_action=args.checkpoint_action,
         single_iteration=args.single_iteration,
+        ablation_variant=args.ablation_variant,
     )
 
 if __name__ == "__main__":

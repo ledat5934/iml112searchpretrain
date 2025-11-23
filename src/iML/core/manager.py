@@ -10,7 +10,7 @@ import signal
 import threading
 import platform
 from pathlib import Path
-from typing import List, Dict
+from typing import List, Dict, Any
 from datetime import datetime
 
 from ..agents import (
@@ -22,6 +22,7 @@ from ..agents import (
     GuidelineAgent,
     PreprocessingCoderAgent,
     ModelingCoderAgent,
+    MonolithicCoderAgent,
     AssemblerAgent,
     ComparisonAgent,
     DebugAgent,
@@ -80,6 +81,7 @@ class Manager:
         input_data_folder: str,
         output_folder: str,
         config: str,
+        ablation_variant: str = None,
     ):
         """Initialize Manager with required paths and config from YAML file.
 
@@ -91,6 +93,7 @@ class Manager:
         self.input_data_folder = input_data_folder
         self.output_folder = output_folder
         self.config = config
+        self.ablation_variant = ablation_variant
 
         # Validate paths
         for path, name in [(input_data_folder, "input_data_folder")]:
@@ -137,6 +140,14 @@ class Manager:
             manager=self,
             llm_config=self.config.modeling_coder,
         )
+        monolithic_llm_config = getattr(self.config, "monolithic_coder", None)
+        if monolithic_llm_config is None:
+            monolithic_llm_config = self.config.modeling_coder
+        self.monolithic_coder_agent = MonolithicCoderAgent(
+            config=config,
+            manager=self,
+            llm_config=monolithic_llm_config,
+        )
         self.assembler_agent = AssemblerAgent(
             config=config,
             manager=self,
@@ -158,6 +169,94 @@ class Manager:
             "input_data_folder": input_data_folder,
             "output_folder": output_folder,
             
+        }
+
+    # ------------------------------------------------------------------
+    # Ablation helpers
+    # ------------------------------------------------------------------
+    def is_ablation_variant(self, variant_name: str = None) -> bool:
+        if not self.ablation_variant:
+            return False
+        if variant_name is None:
+            return True
+        return self.ablation_variant == variant_name
+
+    def is_monolithic_mode(self) -> bool:
+        return self.is_ablation_variant("mono")
+
+    def is_static_mode(self) -> bool:
+        return self.is_ablation_variant("static")
+
+    def is_debug_enabled(self) -> bool:
+        return not self.is_static_mode()
+
+    def _prepare_guideline(self, iteration_type: str = None) -> bool:
+        """
+        Generate or synthesize a guideline depending on the ablation variant.
+        Returns True if guideline context is ready.
+        """
+        if self.is_ablation_variant("reactive"):
+            logger.info("Ablation (reactive): Skipping GuidelineAgent and synthesizing minimal guidance.")
+            self.guideline = self._build_reactive_guideline(iteration_type)
+            try:
+                serialized = json.dumps(self.guideline, ensure_ascii=False, indent=2)
+                self.save_and_log_states(serialized, "guideline/guideline_response.json")
+            except Exception:
+                pass
+            return True
+
+        guideline = self.guideline_agent(iteration_type=iteration_type)
+        if "error" in guideline:
+            logger.error(f"Guideline generation failed: {guideline['error']}")
+            return False
+        self.guideline = guideline
+        logger.info(f"Guideline generated successfully for {iteration_type or 'default'}.")
+        try:
+            serialized = json.dumps(guideline, ensure_ascii=False, indent=2)
+            self.save_and_log_states(serialized, "guideline/guideline_response.json")
+        except Exception:
+            pass
+        return True
+
+    def _build_reactive_guideline(self, iteration_type: str = None) -> Dict[str, Any]:
+        """Construct a lightweight guideline structure from description/profiling outputs."""
+        description = self.description_analysis or {}
+        profiling_summary = getattr(self, "profiling_summary", {}) or {}
+        profiling_result = getattr(self, "profiling_result", {}) or {}
+        id_analysis = profiling_result.get("id_format_analysis", {})
+        submission_analysis = id_analysis.get("submission_format_analysis") if id_analysis else None
+        has_extensions = bool((submission_analysis or {}).get("submission_has_extensions"))
+        id_column_name = (submission_analysis or {}).get("first_column_name", "id")
+
+        modeling_section = {
+            "note": "GuidelineAgent disabled. Infer modeling strategy directly from task description.",
+            "iteration_type": iteration_type or "unspecified",
+            "IDs_in_submission_file_contain_file_extensions": has_extensions,
+            "create_submission_file": {
+                "id_column_name": id_column_name,
+                "notes": "Follow the dataset's sample submission exactly. No additional blueprint available."
+            },
+            "raw_description": description,
+        }
+
+        preprocessing_section = {
+            "note": "No curated preprocessing plan. Use dataset description and profiling summary to design steps.",
+            "profiling_summary": profiling_summary,
+            "dataset_paths": description.get("link to the dataset", []),
+        }
+
+        target_info = profiling_result.get("target_info") or {
+            "note": "Reactive mode could not infer structured target info. Deduce target column from dataset metadata."
+        }
+
+        return {
+            "meta": {
+                "ablation_variant": "iMLreactive",
+                "iteration_type": iteration_type,
+            },
+            "preprocessing": preprocessing_section,
+            "modeling": modeling_section,
+            "target_identification": target_info,
         }
 
     def get_iteration_timeout(self, iteration_type):
@@ -257,6 +356,8 @@ class Manager:
                     for idx, cand in enumerate(models, start=1):
                         if timeout_occurred.is_set():
                             raise IterationTimeoutError("Iteration timeout occurred before guideline generation")
+                        candidate_success = False
+
                         # Narrow suggestions to a single candidate
                         self.model_suggestions = {"sota_models": [cand], "source": model_suggestions.get("source", "sota-search")}
 
@@ -267,67 +368,66 @@ class Manager:
                         self.output_folder = str(candidate_dir)
 
                         # Guideline
-                        guideline = self.guideline_agent(iteration_type=iteration_type)
-                        if "error" in guideline:
-                            logger.error(f"Guideline generation failed for candidate {idx}: {guideline['error']}")
-                            # Restore output folder before continuing
+                        if not self._prepare_guideline(iteration_type=iteration_type):
+                            logger.error(f"Guideline generation failed for candidate {idx}.")
                             self.output_folder = str(original_output_folder)
                             continue
-                        self.guideline = guideline
-                        try:
-                            # Save guideline inside candidate states folder
-                            self.save_and_log_states(json.dumps(guideline, ensure_ascii=False, indent=2), "guideline/guideline_response.json")
-                        except Exception:
-                            pass
 
-                        # Preprocessing
-                        if timeout_occurred.is_set():
-                            raise IterationTimeoutError("Iteration timeout occurred before preprocessing")
-                        preprocessing_code_result = self.preprocessing_coder_agent(iteration_type=iteration_type)
-                        if preprocessing_code_result.get("status") == "failed":
-                            logger.error(f"Preprocessing failed for candidate {idx}: {preprocessing_code_result.get('error')}")
-                            # Restore output folder before continuing
-                            self.output_folder = str(original_output_folder)
-                            continue
-                        self.preprocessing_code = preprocessing_code_result.get("code")
-
-                        # Modeling
-                        if timeout_occurred.is_set():
-                            raise IterationTimeoutError("Iteration timeout occurred before modeling")
-                        modeling_code_result = self.modeling_coder_agent(iteration_type=iteration_type)
-                        if modeling_code_result.get("status") == "failed":
-                            logger.error(f"Modeling failed for candidate {idx}: {modeling_code_result.get('error')}")
-                            # Restore output folder before continuing
-                            self.output_folder = str(original_output_folder)
-                            continue
-                        self.modeling_code = modeling_code_result.get("code")
-
-                        # Assembly
-                        if timeout_occurred.is_set():
-                            raise IterationTimeoutError("Iteration timeout occurred before assembly")
-                        assembler_result = self.assembler_agent(iteration_type=iteration_type)
-                        if assembler_result.get("status") == "failed":
-                            logger.error(f"Assembly failed for candidate {idx}: {assembler_result.get('error')}")
-                            # Restore output folder before continuing
-                            self.output_folder = str(original_output_folder)
-                            continue
-                        # Require submission.csv to consider candidate successful
-                        cand_submission = candidate_dir / "submission.csv"
-                        if cand_submission.exists():
-                            any_success = True
-                            # Copy submission back to iteration root for compatibility and archiving
-                            try:
-                                # archive as submission_cand_{idx}.csv at iteration root
-                                dst_archive = parent_iter_dir / f"submission_cand_{idx}.csv"
-                                shutil.copy2(cand_submission, dst_archive)
-                                # set the first successful as iteration-level submission
-                                if first_success_idx is None:
-                                    shutil.copy2(cand_submission, parent_iter_dir / "submission.csv")
-                                    first_success_idx = idx
-                            except Exception as e:
-                                logger.warning(f"Could not copy submission for candidate {idx}: {e}")
+                        if self.is_monolithic_mode():
+                            if timeout_occurred.is_set():
+                                raise IterationTimeoutError("Iteration timeout occurred before monolithic generation")
+                            mono_result = self.monolithic_coder_agent(iteration_type=iteration_type)
+                            if mono_result.get("status") == "failed":
+                                logger.error(f"Monolithic generation failed for candidate {idx}: {mono_result.get('error')}")
+                                self.output_folder = str(original_output_folder)
+                                continue
+                            candidate_success = True
+                            self.assembled_code = mono_result.get("code")
                         else:
-                            logger.error(f"Candidate {idx} reported success but produced no submission.csv; treating as failure.")
+                            # Preprocessing
+                            if timeout_occurred.is_set():
+                                raise IterationTimeoutError("Iteration timeout occurred before preprocessing")
+                            preprocessing_code_result = self.preprocessing_coder_agent(iteration_type=iteration_type)
+                            if preprocessing_code_result.get("status") == "failed":
+                                logger.error(f"Preprocessing failed for candidate {idx}: {preprocessing_code_result.get('error')}")
+                                self.output_folder = str(original_output_folder)
+                                continue
+                            self.preprocessing_code = preprocessing_code_result.get("code")
+
+                            # Modeling
+                            if timeout_occurred.is_set():
+                                raise IterationTimeoutError("Iteration timeout occurred before modeling")
+                            modeling_code_result = self.modeling_coder_agent(iteration_type=iteration_type)
+                            if modeling_code_result.get("status") == "failed":
+                                logger.error(f"Modeling failed for candidate {idx}: {modeling_code_result.get('error')}")
+                                self.output_folder = str(original_output_folder)
+                                continue
+                            self.modeling_code = modeling_code_result.get("code")
+
+                            # Assembly
+                            if timeout_occurred.is_set():
+                                raise IterationTimeoutError("Iteration timeout occurred before assembly")
+                            assembler_result = self.assembler_agent(iteration_type=iteration_type)
+                            if assembler_result.get("status") == "failed":
+                                logger.error(f"Assembly failed for candidate {idx}: {assembler_result.get('error')}")
+                                self.output_folder = str(original_output_folder)
+                                continue
+                            candidate_success = True
+
+                        if candidate_success:
+                            cand_submission = candidate_dir / "submission.csv"
+                            if cand_submission.exists():
+                                any_success = True
+                                try:
+                                    dst_archive = parent_iter_dir / f"submission_cand_{idx}.csv"
+                                    shutil.copy2(cand_submission, dst_archive)
+                                    if first_success_idx is None:
+                                        shutil.copy2(cand_submission, parent_iter_dir / "submission.csv")
+                                        first_success_idx = idx
+                                except Exception as e:
+                                    logger.warning(f"Could not copy submission for candidate {idx}: {e}")
+                            else:
+                                logger.error(f"Candidate {idx} reported success but produced no submission.csv; treating as failure.")
 
                         # Restore output folder for next candidate
                         self.output_folder = str(original_output_folder)
@@ -342,12 +442,18 @@ class Manager:
             if timeout_occurred.is_set():
                 raise IterationTimeoutError("Iteration timeout occurred before guideline generation")
                 
-            guideline = self.guideline_agent(iteration_type=iteration_type)
-            if "error" in guideline:
-                logger.error(f"Guideline generation failed: {guideline['error']}")
+            if not self._prepare_guideline(iteration_type=iteration_type):
                 return False
-            self.guideline = guideline
-            logger.info(f"Guideline generated successfully for {iteration_type}.")
+
+            if self.is_monolithic_mode():
+                if timeout_occurred.is_set():
+                    raise IterationTimeoutError("Iteration timeout occurred before monolithic generation")
+                mono_result = self.monolithic_coder_agent(iteration_type=iteration_type)
+                if mono_result.get("status") == "failed":
+                    logger.error(f"Monolithic generation failed: {mono_result.get('error')}")
+                    return False
+                self.assembled_code = mono_result.get("code")
+                return True
 
             # Step 2: Run Preprocessing Coder Agent
             if timeout_occurred.is_set():
@@ -437,12 +543,8 @@ class Manager:
             return True
 
         # Step 3c: Run guideline agent
-        guideline = self.guideline_agent()
-        if "error" in guideline:
-            logger.error(f"Guideline generation failed: {guideline['error']}")
+        if not self._prepare_guideline():
             return False
-        self.guideline = guideline
-        logger.info("Guideline generated successfully.")
 
         if stop_after == "guideline":
             logger.info("Pipeline stopped after guideline generation.")
@@ -562,11 +664,8 @@ class Manager:
                     self.model_suggestions = model_suggestions
             
             # Re-run guideline generation (useful after editing prompt)
-            guideline = self.guideline_agent()
-            if "error" in guideline:
-                logger.error(f"Guideline generation failed: {guideline['error']}")
+            if not self._prepare_guideline():
                 return False
-            self.guideline = guideline
             logger.info("Guideline regenerated successfully.")
 
         if start_from in ["guideline", "preprocessing"]:
@@ -906,6 +1005,45 @@ class Manager:
         finally:
             # Restore original output folder
             self.output_folder = original_output_folder
+
+    def run_pipeline_ablation(self, variant: str, iteration_type: str):
+        """Run the pipeline under an ablation variant."""
+        logger.info(f"=== Starting Ablation Run: {variant} | Iteration: {iteration_type} ===")
+        prev_variant = self.ablation_variant
+        self.ablation_variant = variant
+
+        # Shared analysis
+        logger.info("Running shared analysis steps...")
+        success = self._run_shared_analysis()
+        if not success:
+            self.ablation_variant = prev_variant
+            return
+
+        ablation_root = Path(self.output_folder) / f"ablation_{variant}"
+        ablation_root.mkdir(parents=True, exist_ok=True)
+        iteration_folder = ablation_root / f"iteration_{iteration_type}"
+        iteration_folder.mkdir(parents=True, exist_ok=True)
+
+        original_output_folder = self.output_folder
+        self.output_folder = str(iteration_folder)
+
+        iteration_timeout = self.get_iteration_timeout(iteration_type)
+        logger.info(f"Ablation iteration timeout: {iteration_timeout} seconds")
+
+        start_time = time.time()
+        try:
+            success = self._run_iteration_with_timeout(iteration_type, iteration_timeout)
+            duration = time.time() - start_time
+            if success:
+                logger.info(f"Ablation run ({variant}) completed successfully in {duration:.1f}s")
+            else:
+                logger.error(f"Ablation run ({variant}) failed after {duration:.1f}s")
+        except IterationTimeoutError:
+            duration = time.time() - start_time
+            logger.warning(f"Ablation run ({variant}) timed out after {iteration_timeout} seconds.")
+        finally:
+            self.output_folder = original_output_folder
+            self.ablation_variant = prev_variant
     
     def _run_shared_analysis(self):
         """Run the shared analysis steps (description, profiling, summarization)."""
@@ -978,6 +1116,7 @@ class Manager:
                 parent_iter_dir = Path(self.output_folder)
                 first_success_idx = None
                 for idx, cand in enumerate(models, start=1):
+                    candidate_success = False
                     # Narrow suggestions to a single candidate
                     self.model_suggestions = {"sota_models": [cand], "source": model_suggestions.get("source", "sota-search")}
                     # Prepare candidate-specific output directory and switch context
@@ -986,58 +1125,59 @@ class Manager:
                     original_output_folder = self.output_folder
                     self.output_folder = str(candidate_dir)
                     # Guideline
-                    guideline = self.guideline_agent(iteration_type=iteration_type)
-                    if "error" in guideline:
-                        logger.error(f"Guideline generation failed for candidate {idx}: {guideline['error']}")
-                        # Restore output folder before continuing
+                    if not self._prepare_guideline(iteration_type=iteration_type):
+                        logger.error(f"Guideline generation failed for candidate {idx}.")
                         self.output_folder = str(original_output_folder)
                         continue
-                    self.guideline = guideline
-                    try:
-                        # Save guideline inside candidate states folder
-                        self.save_and_log_states(json.dumps(guideline, ensure_ascii=False, indent=2), "guideline/guideline_response.json")
-                    except Exception:
-                        pass
 
-                    # Preprocessing
-                    preprocessing_code_result = self.preprocessing_coder_agent(iteration_type=iteration_type)
-                    if preprocessing_code_result.get("status") == "failed":
-                        logger.error(f"Preprocessing failed for candidate {idx}: {preprocessing_code_result.get('error')}")
-                        # Restore output folder before continuing
-                        self.output_folder = str(original_output_folder)
-                        continue
-                    self.preprocessing_code = preprocessing_code_result.get("code")
+                    if self.is_monolithic_mode():
+                        mono_result = self.monolithic_coder_agent(iteration_type=iteration_type)
+                        if mono_result.get("status") == "failed":
+                            logger.error(f"Monolithic generation failed for candidate {idx}: {mono_result.get('error')}")
+                            self.output_folder = str(original_output_folder)
+                            continue
+                        candidate_success = True
+                        self.assembled_code = mono_result.get("code")
+                    else:
+                        # Preprocessing
+                        preprocessing_code_result = self.preprocessing_coder_agent(iteration_type=iteration_type)
+                        if preprocessing_code_result.get("status") == "failed":
+                            logger.error(f"Preprocessing failed for candidate {idx}: {preprocessing_code_result.get('error')}")
+                            self.output_folder = str(original_output_folder)
+                            continue
+                        self.preprocessing_code = preprocessing_code_result.get("code")
 
-                    # Modeling
-                    modeling_code_result = self.modeling_coder_agent(iteration_type=iteration_type)
-                    if modeling_code_result.get("status") == "failed":
-                        logger.error(f"Modeling failed for candidate {idx}: {modeling_code_result.get('error')}")
-                        # Restore output folder before continuing
-                        self.output_folder = str(original_output_folder)
-                        continue
-                    self.modeling_code = modeling_code_result.get("code")
+                        # Modeling
+                        modeling_code_result = self.modeling_coder_agent(iteration_type=iteration_type)
+                        if modeling_code_result.get("status") == "failed":
+                            logger.error(f"Modeling failed for candidate {idx}: {modeling_code_result.get('error')}")
+                            self.output_folder = str(original_output_folder)
+                            continue
+                        self.modeling_code = modeling_code_result.get("code")
 
-                    # Assembly
-                    assembler_result = self.assembler_agent(iteration_type=iteration_type)
-                    if assembler_result.get("status") == "failed":
-                        logger.error(f"Assembly failed for candidate {idx}: {assembler_result.get('error')}")
-                        # Restore output folder before continuing
-                        self.output_folder = str(original_output_folder)
-                        continue
-                    any_success = True
-                    # Copy submission back to iteration root for compatibility and archiving
-                    try:
+                        # Assembly
+                        assembler_result = self.assembler_agent(iteration_type=iteration_type)
+                        if assembler_result.get("status") == "failed":
+                            logger.error(f"Assembly failed for candidate {idx}: {assembler_result.get('error')}")
+                            self.output_folder = str(original_output_folder)
+                            continue
+                        candidate_success = True
+
+                    if candidate_success:
                         cand_submission = candidate_dir / "submission.csv"
                         if cand_submission.exists():
-                            # archive as submission_cand_{idx}.csv at iteration root
-                            dst_archive = parent_iter_dir / f"submission_cand_{idx}.csv"
-                            shutil.copy2(cand_submission, dst_archive)
-                            # set the first successful as iteration-level submission
-                            if first_success_idx is None:
-                                shutil.copy2(cand_submission, parent_iter_dir / "submission.csv")
-                                first_success_idx = idx
-                    except Exception as e:
-                        logger.warning(f"Could not copy submission for candidate {idx}: {e}")
+                            any_success = True
+                            try:
+                                dst_archive = parent_iter_dir / f"submission_cand_{idx}.csv"
+                                shutil.copy2(cand_submission, dst_archive)
+                                if first_success_idx is None:
+                                    shutil.copy2(cand_submission, parent_iter_dir / "submission.csv")
+                                    first_success_idx = idx
+                            except Exception as e:
+                                logger.warning(f"Could not copy submission for candidate {idx}: {e}")
+                        else:
+                            logger.error(f"Candidate {idx} reported success but produced no submission.csv; treating as failure.")
+
                     # Restore output folder for next candidate
                     self.output_folder = str(original_output_folder)
 
@@ -1048,12 +1188,16 @@ class Manager:
                 delattr(self, "model_suggestions")
 
         # Step 1b: Run guideline agent with iteration-specific algorithm constraint
-        guideline = self.guideline_agent(iteration_type=iteration_type)
-        if "error" in guideline:
-            logger.error(f"Guideline generation failed: {guideline['error']}")
+        if not self._prepare_guideline(iteration_type=iteration_type):
             return False
-        self.guideline = guideline
-        logger.info(f"Guideline generated successfully for {iteration_type}.")
+
+        if self.is_monolithic_mode():
+            mono_result = self.monolithic_coder_agent(iteration_type=iteration_type)
+            if mono_result.get("status") == "failed":
+                logger.error(f"Monolithic generation failed: {mono_result.get('error')}")
+                return False
+            self.assembled_code = mono_result.get("code")
+            return True
 
         # Step 2: Run Preprocessing Coder Agent
         preprocessing_code_result = self.preprocessing_coder_agent(iteration_type=iteration_type)
@@ -1115,13 +1259,8 @@ class Manager:
         self.model_suggestions = model_suggestions
 
         # 3c: Run guideline agent with summarized profiling + model suggestions
-        guideline = self.guideline_agent()
-        if "error" in guideline:
-            logger.error(f"Guideline generation failed: {guideline['error']}")
+        if not self._prepare_guideline():
             return
-        
-        self.guideline = guideline
-        logger.info("Guideline generated successfully.")
 
         # Step 4: Run Preprocessing Coder Agent
         preprocessing_code_result = self.preprocessing_coder_agent()
@@ -1180,6 +1319,16 @@ class Manager:
 
         # Write the code to the script file
         self.write_code_script(code_to_execute, str(script_path))
+
+        # In static ablation mode, skip execution for intermediate phases
+        skip_execution = self.is_static_mode() and phase_name not in {"assemble"}
+        if skip_execution:
+            logger.info(f"[iMLstatic] Skipping runtime execution for phase '{phase_name}'. Performing syntax check only.")
+            try:
+                compile(code_to_execute, str(script_path), "exec")
+                return {"success": True, "stdout": "", "stderr": ""}
+            except SyntaxError as exc:
+                return {"success": False, "stdout": "", "stderr": f"SyntaxError: {exc}"}
 
         logger.info(f"Executing code from: {script_path}")
 

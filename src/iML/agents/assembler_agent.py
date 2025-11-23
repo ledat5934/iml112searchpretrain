@@ -102,6 +102,10 @@ class AssemblerAgent(BaseAgent):
                         f"---ATTEMPT {attempt+1}---\nDATASET PATHS:\n{dataset_paths}\n\nCODE:\n{final_code}\n\nERROR:\n{error_to_log}",
                         f"assemble/attempt_{attempt+1}/failed.log"
                     )
+                    if not self.manager.is_debug_enabled():
+                        combined_code = final_code
+                        continue
+
                     filename = "code_generated"
                     task_desc = (self.manager.description_analysis or {}).get('task_description') or json.dumps(self.manager.description_analysis)
                     ok, patched, meta = self.manager.debug_agent.llm_debug_fix(
@@ -136,7 +140,10 @@ class AssemblerAgent(BaseAgent):
                     f"---ATTEMPT {attempt+1}---\nDATASET PATHS:\n{dataset_paths}\n\nCODE:\n{final_code}\n\nERROR:\n{error_to_log}",
                     f"assemble/attempt_{attempt+1}/failed.log"
                 )
-                # Two-step LLM debug: summary (no search) -> refine (with google_search)
+                if not self.manager.is_debug_enabled():
+                    combined_code = final_code
+                    continue
+
                 filename = "code_generated"
                 task_desc = (self.manager.description_analysis or {}).get('task_description') or json.dumps(self.manager.description_analysis)
                 ok, patched, meta = self.manager.debug_agent.llm_debug_fix(
