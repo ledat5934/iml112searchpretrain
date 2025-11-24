@@ -162,7 +162,7 @@ class Manager:
         self.debug_agent = DebugAgent(
             config=config,
             manager=self,
-            max_rounds=10,
+            max_rounds=1,
         )
 
         self.context = {
