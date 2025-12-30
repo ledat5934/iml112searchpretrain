@@ -278,7 +278,7 @@ IMPORTANT: Ensure the generated JSON is perfectly valid.
     def _get_algorithm_constraint(self, iteration_type: str | None) -> str:
         """Get algorithm constraint based on iteration type."""
         if iteration_type == "traditional":
-            return "IMPORTANT: YOU MUST USE TRADITIONAL ML ALGORITHMS: XGBoost, LightGBM, CatBoost, Linear regression, SVM, Bayes, ..."
+            return "IMPORTANT: YOU MUST USE TRADITIONAL ML ALGORITHMS: XGBoost, LightGBM, CatBoost, Linear regression, SVM, Bayes, TabPFN, ..."
         elif iteration_type == "custom_nn":
             return "IMPORTANT: YOU MUST BUILD CUSTOM NEURAL NETWORKS from scratch using PyTorch. "
         elif iteration_type == "custom_nn_search":
