@@ -360,39 +360,61 @@ class AssistantChatHuggingFace(BaseAssistantChat):
         if not messages:
             raise ValueError("Messages list cannot be empty")
         
+        # Handle case where messages might be a tuple or other iterable
+        if isinstance(messages, tuple):
+            messages = list(messages)
+        
         try:
             # Use chat template if available (automatically handles harmony format)
             if hasattr(self.tokenizer, "apply_chat_template") and self.tokenizer.chat_template is not None:
                 # Extract text from messages - convert to format expected by chat template
                 formatted = []
                 for i, msg in enumerate(messages):
-                    # Get content - handle different ways content might be stored
+                    # Handle different message formats
                     content = None
                     msg_type = type(msg).__name__
                     
+                    # Case 1: Standard LangChain message object with .content attribute
                     if hasattr(msg, 'content'):
                         content = msg.content
-                    elif hasattr(msg, 'get') and callable(getattr(msg, 'get')):
-                        # Some message types might use dict-like interface
+                    # Case 2: Dict-like interface
+                    elif isinstance(msg, dict):
                         content = msg.get('content', None)
+                    # Case 3: Tuple or list (unlikely but handle it)
+                    elif isinstance(msg, (tuple, list)) and len(msg) >= 2:
+                        # Assume format like (role, content) or [role, content]
+                        content = msg[1] if len(msg) > 1 else None
+                    # Case 4: String (direct content)
+                    elif isinstance(msg, str):
+                        content = msg
+                    # Case 5: Try to get content via getattr
+                    else:
+                        try:
+                            content = getattr(msg, 'content', None)
+                        except:
+                            pass
                     
                     # Debug logging
-                    logger.debug(f"Message {i}: type={msg_type}, has_content={hasattr(msg, 'content')}, content_type={type(content).__name__ if content is not None else 'None'}, content_len={len(str(content)) if content is not None else 0}")
+                    logger.debug(f"Message {i}: type={msg_type}, has_content={hasattr(msg, 'content') if hasattr(msg, '__class__') else False}, content_type={type(content).__name__ if content is not None else 'None'}, content_len={len(str(content)) if content is not None else 0}")
                     
                     # Convert to string and check if not empty
                     if content is not None:
                         content_str = str(content).strip()
                         if content_str:  # Only add if content is not empty after stripping
+                            # Determine role based on message type
+                            role = "user"  # default
                             if isinstance(msg, SystemMessage):
-                                formatted.append({"role": "system", "content": content_str})
+                                role = "system"
                             elif isinstance(msg, HumanMessage):
-                                formatted.append({"role": "user", "content": content_str})
+                                role = "user"
                             elif isinstance(msg, AIMessage):
-                                formatted.append({"role": "assistant", "content": content_str})
-                            else:
-                                # Unknown message type - treat as user message
-                                logger.warning(f"Unknown message type: {msg_type}, treating as user message")
-                                formatted.append({"role": "user", "content": content_str})
+                                role = "assistant"
+                            elif isinstance(msg, dict):
+                                role = msg.get('role', 'user')
+                            elif isinstance(msg, (tuple, list)) and len(msg) >= 1:
+                                role = str(msg[0]) if len(msg) > 0 else "user"
+                            
+                            formatted.append({"role": role, "content": content_str})
                         else:
                             logger.warning(f"Message {i} ({msg_type}) has empty content after stripping")
                     else:
