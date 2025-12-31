@@ -6,6 +6,7 @@ import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline, BitsAndBytesConfig
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 from pydantic import Field
+from huggingface_hub.utils import RemoteEntryNotFoundError
 
 from .base_chat import BaseAssistantChat
 
@@ -60,10 +61,27 @@ class AssistantChatHuggingFace(BaseAssistantChat):
         
         try:
             # Load tokenizer
-            self.tokenizer = AutoTokenizer.from_pretrained(
-                self.model_id,
-                trust_remote_code=self.trust_remote_code
-            )
+            # Note: Some models may trigger 404 for additional_chat_templates, but this is harmless
+            # We catch and suppress this specific error, then retry with use_fast=False
+            try:
+                self.tokenizer = AutoTokenizer.from_pretrained(
+                    self.model_id,
+                    trust_remote_code=self.trust_remote_code
+                )
+            except RemoteEntryNotFoundError as e:
+                # Check if error is about additional_chat_templates (harmless 404)
+                if "additional_chat_templates" in str(e):
+                    logger.warning("additional_chat_templates not found (harmless 404). Retrying with use_fast=False...")
+                    # Retry with use_fast=False - this only affects tokenization speed, not functionality
+                    self.tokenizer = AutoTokenizer.from_pretrained(
+                        self.model_id,
+                        trust_remote_code=self.trust_remote_code,
+                        use_fast=False
+                    )
+                    logger.info("Tokenizer loaded successfully (slow tokenizer mode)")
+                else:
+                    # Re-raise if it's a different RemoteEntryNotFoundError
+                    raise
             
             # Configure quantization
             quantization_config = None
