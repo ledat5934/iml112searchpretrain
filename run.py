@@ -91,7 +91,7 @@ Examples:
     # Override config path if backbone-model is specified
     if args.backbone_model == "gpt-oss-20b":
         args.config = "configs/gpt-oss-20b.yaml"
-        print(f"Using Qwen2.5-Coder-7B-Instruct (8-bit) as coding backbone. Config: {args.config}")
+        print(f"Using Qwen2.5-Coder-7B-Instruct (4-bit) as coding backbone. Config: {args.config}")
     elif args.backbone_model == "gemini":
         args.config = "configs/default.yaml"
         print(f"Using Gemini as default. Config: {args.config}")

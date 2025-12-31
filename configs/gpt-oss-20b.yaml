@@ -36,7 +36,7 @@ llm: &default_llm
 coding_backbone: &coding_backbone
   provider: huggingface
   model: Qwen/Qwen2.5-Coder-7B-Instruct
-  quantization: 8bit  # 7B model có thể dùng 8-bit quantization trên GPU 16GB
+  quantization: 4bit  # 4-bit quantization để tiết kiệm VRAM (~4-5GB), phù hợp GPU 16GB
   device_map: auto
   trust_remote_code: false
   max_tokens: 8192
@@ -57,7 +57,7 @@ profiling_summarizer:
 guideline_generator:
   <<: *default_llm
 
-# Coding agents: dùng Qwen2.5-Coder-7B-Instruct với 8-bit quantization
+# Coding agents: dùng Qwen2.5-Coder-7B-Instruct với 4-bit quantization
 preprocessing_coder:
   <<: *coding_backbone
 
