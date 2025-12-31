@@ -4,7 +4,7 @@ import os
 from typing import Any, Dict, List, Optional
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline, BitsAndBytesConfig
-from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
+from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, SystemMessage
 from pydantic import Field
 
 from .base_chat import BaseAssistantChat
@@ -278,22 +278,33 @@ class AssistantChatHuggingFace(BaseAssistantChat):
     
     def invoke(self, messages: List[BaseMessage], **kwargs) -> BaseMessage:
         """Invoke model with messages (for LangGraph compatibility)."""
+        if not messages:
+            raise ValueError("Messages list cannot be empty for model invocation")
+        
         try:
             # Convert LangChain messages to format expected by model
             formatted_input = self._format_messages(messages)
             
+            if not formatted_input or not formatted_input.strip():
+                raise ValueError("Formatted input is empty after processing messages")
+            
             # Prepare generation kwargs
+            # Note: Qwen2.5-Coder may not support temperature/top_p/top_k in some cases
+            # We'll use do_sample=False for deterministic output (temperature=0.0)
             generation_kwargs = {
                 "max_new_tokens": self.max_tokens,
                 "return_full_text": False,
-                "do_sample": self.temperature > 0.0,
+                "do_sample": False,  # Use deterministic generation (greedy)
             }
             
-            # Only add temperature if do_sample is True
+            # Only add sampling parameters if temperature > 0 and model supports it
+            # But based on test, Qwen may ignore these, so we keep do_sample=False for now
+            # If you want sampling, set do_sample=True and temperature
             if self.temperature > 0.0:
+                generation_kwargs["do_sample"] = True
                 generation_kwargs["temperature"] = self.temperature
             
-            # Merge with any additional kwargs
+            # Merge with any additional kwargs (may override above)
             generation_kwargs.update(kwargs)
             
             # Generate response
@@ -302,49 +313,70 @@ class AssistantChatHuggingFace(BaseAssistantChat):
                 **generation_kwargs
             )
             
-            # Extract generated text with better error handling
+            # Extract generated text - based on test, output is always list[dict] with 'generated_text' key
             generated_text = ""
-            if outputs is None:
-                logger.error("Pipeline returned None")
-                generated_text = ""
-            elif isinstance(outputs, list):
-                if len(outputs) > 0:
-                    first_output = outputs[0]
-                    if isinstance(first_output, dict):
-                        generated_text = first_output.get("generated_text", "")
-                    else:
-                        generated_text = str(first_output)
-                else:
-                    logger.warning("Pipeline returned empty list")
-                    generated_text = ""
-            elif isinstance(outputs, dict):
-                generated_text = outputs.get("generated_text", str(outputs))
-            else:
-                generated_text = str(outputs)
             
-            if not generated_text or generated_text.strip() == "":
-                logger.warning("Generated text is empty, returning empty response")
-                generated_text = ""
+            if outputs is None:
+                raise ValueError("Pipeline returned None - this should not happen")
+            
+            elif isinstance(outputs, list):
+                if len(outputs) == 0:
+                    raise ValueError("Pipeline returned empty list")
+                
+                first_output = outputs[0]
+                if not isinstance(first_output, dict):
+                    raise ValueError(f"Pipeline output[0] is not a dict, got {type(first_output)}: {first_output}")
+                
+                if "generated_text" not in first_output:
+                    raise ValueError(f"Pipeline output[0] does not contain 'generated_text' key. Keys: {first_output.keys()}")
+                
+                generated_text = first_output["generated_text"]
+                
+            elif isinstance(outputs, dict):
+                # Direct dict output (unlikely but handle it)
+                generated_text = outputs.get("generated_text", "")
+            else:
+                # Unexpected format
+                raise ValueError(f"Pipeline returned unexpected type: {type(outputs)}, value: {outputs}")
+            
+            # Validate generated text
+            if not generated_text:
+                raise ValueError("Generated text is empty")
+            
+            if not isinstance(generated_text, str):
+                generated_text = str(generated_text)
             
             # Return as AIMessage
-            return AIMessage(content=generated_text)
+            return AIMessage(content=generated_text.strip())
             
         except Exception as e:
             logger.error(f"Error during model invocation: {e}")
+            logger.error(f"Messages: {messages}")
+            logger.error(f"Formatted input length: {len(formatted_input) if 'formatted_input' in locals() else 'N/A'}")
             raise
     
     def _format_messages(self, messages: List[BaseMessage]) -> str:
         """Convert LangChain messages to model format."""
+        if not messages:
+            raise ValueError("Messages list cannot be empty")
+        
         try:
             # Use chat template if available (automatically handles harmony format)
             if hasattr(self.tokenizer, "apply_chat_template") and self.tokenizer.chat_template is not None:
-                # Extract text from messages
+                # Extract text from messages - convert to format expected by chat template
                 formatted = []
                 for msg in messages:
-                    if isinstance(msg, HumanMessage):
-                        formatted.append({"role": "user", "content": msg.content})
-                    elif isinstance(msg, AIMessage):
-                        formatted.append({"role": "assistant", "content": msg.content})
+                    # Handle SystemMessage, HumanMessage, AIMessage
+                    if hasattr(msg, 'content') and msg.content:
+                        if isinstance(msg, SystemMessage):
+                            formatted.append({"role": "system", "content": str(msg.content)})
+                        elif isinstance(msg, HumanMessage):
+                            formatted.append({"role": "user", "content": str(msg.content)})
+                        elif isinstance(msg, AIMessage):
+                            formatted.append({"role": "assistant", "content": str(msg.content)})
+                        else:
+                            # Unknown message type - treat as user message
+                            formatted.append({"role": "user", "content": str(msg.content)})
                 
                 # Only apply chat template if we have at least one message
                 if len(formatted) > 0:
@@ -354,35 +386,43 @@ class AssistantChatHuggingFace(BaseAssistantChat):
                             tokenize=False,
                             add_generation_prompt=True
                         )
-                        if formatted_text:
+                        if formatted_text and formatted_text.strip():
                             return formatted_text
-                    except (IndexError, KeyError, AttributeError) as e:
+                    except (IndexError, KeyError, AttributeError, ValueError) as e:
                         logger.warning(f"Error applying chat template: {e}, using fallback")
                         # Fallback to simple concatenation
                         pass
                 else:
-                    logger.warning("No messages to format, using fallback")
+                    # No valid messages found - this should not happen if messages list is not empty
+                    logger.warning("No valid messages found after filtering, using fallback")
             
             # Fallback: concatenate messages
             text_parts = []
             for msg in messages:
-                if isinstance(msg, HumanMessage):
-                    text_parts.append(f"User: {msg.content}")
-                elif isinstance(msg, AIMessage):
-                    text_parts.append(f"Assistant: {msg.content}")
-                elif hasattr(msg, 'content'):
-                    text_parts.append(str(msg.content))
+                if hasattr(msg, 'content') and msg.content:
+                    if isinstance(msg, SystemMessage):
+                        text_parts.append(f"System: {msg.content}")
+                    elif isinstance(msg, HumanMessage):
+                        text_parts.append(f"User: {msg.content}")
+                    elif isinstance(msg, AIMessage):
+                        text_parts.append(f"Assistant: {msg.content}")
+                    else:
+                        text_parts.append(str(msg.content))
             
             if text_parts:
                 return "\n".join(text_parts)
             else:
-                # Ultimate fallback
-                return "\n".join([str(msg) for msg in messages])
+                # Ultimate fallback - should not reach here if messages is not empty
+                raise ValueError(f"No valid message content found in messages list: {messages}")
                 
         except Exception as e:
-            logger.warning(f"Error formatting messages with chat template: {e}, using fallback")
-            # Fallback: simple concatenation
-            return "\n".join([msg.content for msg in messages if hasattr(msg, 'content')])
+            logger.error(f"Error formatting messages: {e}")
+            # Last resort fallback
+            content_parts = [str(msg.content) for msg in messages if hasattr(msg, 'content') and msg.content]
+            if content_parts:
+                return "\n".join(content_parts)
+            else:
+                raise ValueError(f"Cannot format messages: {e}. Messages: {messages}")
     
     def describe(self) -> Dict[str, Any]:
         base_desc = super().describe()
