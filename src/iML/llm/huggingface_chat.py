@@ -422,17 +422,31 @@ class AssistantChatHuggingFace(BaseAssistantChat):
                     # Handle different message formats
                     content = None
                     msg_type = type(msg).__name__
+                    role = "user"  # default role
                     
                     # Case 1: Standard LangChain message object with .content attribute
                     if hasattr(msg, 'content'):
                         content = msg.content
+                        # Determine role based on message type
+                        if isinstance(msg, SystemMessage):
+                            role = "system"
+                        elif isinstance(msg, HumanMessage):
+                            role = "user"
+                        elif isinstance(msg, AIMessage):
+                            role = "assistant"
                     # Case 2: Dict-like interface
                     elif isinstance(msg, dict):
                         content = msg.get('content', None)
+                        role = msg.get('role', 'user')
                     # Case 3: Tuple or list (unlikely but handle it)
-                    elif isinstance(msg, (tuple, list)) and len(msg) >= 2:
-                        # Assume format like (role, content) or [role, content]
-                        content = msg[1] if len(msg) > 1 else None
+                    elif isinstance(msg, (tuple, list)):
+                        if len(msg) >= 2:
+                            # Assume format like (role, content) or [role, content]
+                            role = str(msg[0]) if len(msg) > 0 else "user"
+                            content = msg[1] if len(msg) > 1 else None
+                        elif len(msg) == 1:
+                            # Just content, no role
+                            content = msg[0]
                     # Case 4: String (direct content)
                     elif isinstance(msg, str):
                         content = msg
@@ -440,30 +454,21 @@ class AssistantChatHuggingFace(BaseAssistantChat):
                     else:
                         try:
                             content = getattr(msg, 'content', None)
+                            # Try to get role if available
+                            if hasattr(msg, 'type') or hasattr(msg, 'role'):
+                                role = getattr(msg, 'role', getattr(msg, 'type', 'user'))
                         except:
                             pass
                     
-                    # Debug logging
-                    logger.debug(f"Message {i}: type={msg_type}, has_content={hasattr(msg, 'content') if hasattr(msg, '__class__') else False}, content_type={type(content).__name__ if content is not None else 'None'}, content_len={len(str(content)) if content is not None else 0}")
+                    # Debug logging (use INFO so it shows up)
+                    logger.info(f"Message {i}: type={msg_type}, role={role}, has_content={content is not None}, content_len={len(str(content)) if content is not None else 0}")
                     
                     # Convert to string and check if not empty
                     if content is not None:
                         content_str = str(content).strip()
                         if content_str:  # Only add if content is not empty after stripping
-                            # Determine role based on message type
-                            role = "user"  # default
-                            if isinstance(msg, SystemMessage):
-                                role = "system"
-                            elif isinstance(msg, HumanMessage):
-                                role = "user"
-                            elif isinstance(msg, AIMessage):
-                                role = "assistant"
-                            elif isinstance(msg, dict):
-                                role = msg.get('role', 'user')
-                            elif isinstance(msg, (tuple, list)) and len(msg) >= 1:
-                                role = str(msg[0]) if len(msg) > 0 else "user"
-                            
                             formatted.append({"role": role, "content": content_str})
+                            logger.info(f"  Added to formatted: role={role}, content_preview={content_str[:100]}")
                         else:
                             logger.warning(f"Message {i} ({msg_type}) has empty content after stripping")
                     else:
@@ -480,7 +485,27 @@ class AssistantChatHuggingFace(BaseAssistantChat):
                         assistant_msgs = [msg for msg in formatted if msg.get("role") == "assistant"]
                         
                         # Reorder: system first, then user/assistant messages
+                        # Only reorder if we have messages to reorder
                         reordered = system_msgs + user_msgs + assistant_msgs
+                        
+                        # Validate reordered list is not empty
+                        if len(reordered) == 0:
+                            logger.warning("Reordered messages list is empty, using original formatted list")
+                            reordered = formatted
+                        
+                        # Ensure we have at least one user message (required for chat template)
+                        if not any(msg.get("role") == "user" for msg in reordered):
+                            logger.warning("No user message found in reordered list, using original formatted list")
+                            reordered = formatted
+                        
+                        # Final validation before applying chat template
+                        if len(reordered) == 0:
+                            raise ValueError("Cannot apply chat template: reordered messages list is empty")
+                        
+                        # Log reordered messages for debugging
+                        logger.info(f"Applying chat template to {len(reordered)} messages:")
+                        for i, msg in enumerate(reordered):
+                            logger.info(f"  {i}: role={msg.get('role')}, content_len={len(msg.get('content', ''))}")
                         
                         formatted_text = self.tokenizer.apply_chat_template(
                             reordered,
