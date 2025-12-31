@@ -32,11 +32,11 @@ llm: &default_llm
   template: null
   add_coding_format_instruction: false
 
-# Coding backbone: GPT-OSS-20B với 4-bit quantization
+# Coding backbone: Qwen2.5-Coder-7B-Instruct với HuggingFace transformers
 coding_backbone: &coding_backbone
   provider: huggingface
-  model: openai/gpt-oss-20b
-  quantization: 4bit
+  model: Qwen/Qwen2.5-Coder-7B-Instruct
+  quantization: 8bit  # 7B model có thể dùng 8-bit quantization trên GPU 16GB
   device_map: auto
   trust_remote_code: false
   max_tokens: 8192
@@ -57,7 +57,7 @@ profiling_summarizer:
 guideline_generator:
   <<: *default_llm
 
-# Coding agents: dùng GPT-OSS-20B với 4-bit quantization
+# Coding agents: dùng Qwen2.5-Coder-7B-Instruct với 8-bit quantization
 preprocessing_coder:
   <<: *coding_backbone
 

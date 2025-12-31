@@ -11,6 +11,7 @@ from .bedrock_chat import AssistantChatBedrock, create_bedrock_chat, get_bedrock
 from .gemini_chat import AssistantChatGemini, create_gemini_chat, get_gemini_models
 from .huggingface_chat import AssistantChatHuggingFace, create_huggingface_chat, get_huggingface_models
 from .openai_chat import AssistantChatOpenAI, create_openai_chat, get_openai_models
+from .ollama_chat import AssistantChatOllama, create_ollama_chat, get_ollama_models
 
 logger = logging.getLogger(__name__)
 
@@ -37,17 +38,19 @@ class ChatLLMFactory:
             return get_gemini_models()
         elif provider == "huggingface":
             return get_huggingface_models()
+        elif provider == "ollama":
+            return get_ollama_models()
         else:
             raise ValueError(f"Unsupported provider: {provider}")
 
     @classmethod
     def get_valid_providers(cls):
-        return ["azure", "openai", "bedrock", "anthropic", "gemini", "huggingface"]
+        return ["azure", "openai", "bedrock", "anthropic", "gemini", "huggingface", "ollama"]
 
     @classmethod
     def get_chat_model(
         cls, config: DictConfig, session_name: str
-    ) -> Union[AssistantChatOpenAI, AssistantAzureChatOpenAI, AssistantChatBedrock, AssistantChatAnthropic, AssistantChatGemini, AssistantChatHuggingFace]:
+    ) -> Union[AssistantChatOpenAI, AssistantAzureChatOpenAI, AssistantChatBedrock, AssistantChatAnthropic, AssistantChatGemini, AssistantChatHuggingFace, AssistantChatOllama]:
         """Get a configured chat model instance using LangGraph patterns."""
         provider = config.provider
         model = config.model
@@ -78,5 +81,7 @@ class ChatLLMFactory:
             return create_gemini_chat(config, session_name)
         elif provider == "huggingface":
             return create_huggingface_chat(config, session_name)
+        elif provider == "ollama":
+            return create_ollama_chat(config, session_name)
         else:
             raise ValueError(f"Unsupported provider: {provider}")

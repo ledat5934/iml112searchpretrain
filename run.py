@@ -82,7 +82,7 @@ Examples:
         choices=["gemini", "gpt-oss-20b"],
         default=None,
         help="Backbone LLM for coding agents. Options: 'gemini' (default, uses config file), "
-             "'gpt-oss-20b' (4-bit quantized GPT-OSS-20B for coding agents, Gemini for others). "
+             "'gpt-oss-20b' (uses Qwen2.5-Coder-7B-Instruct with 8-bit quantization for coding agents, Gemini for others). "
              "If not specified, uses the config file default."
     )
     
@@ -91,7 +91,7 @@ Examples:
     # Override config path if backbone-model is specified
     if args.backbone_model == "gpt-oss-20b":
         args.config = "configs/gpt-oss-20b.yaml"
-        print(f"Using GPT-OSS-20B (4-bit) as coding backbone. Config: {args.config}")
+        print(f"Using Qwen2.5-Coder-7B-Instruct (8-bit) as coding backbone. Config: {args.config}")
     elif args.backbone_model == "gemini":
         args.config = "configs/default.yaml"
         print(f"Using Gemini as default. Config: {args.config}")

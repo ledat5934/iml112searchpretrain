@@ -315,7 +315,7 @@ class AssistantChatHuggingFace(BaseAssistantChat):
 
 def get_huggingface_models() -> List[str]:
     """Get available HuggingFace models (hardcoded for now)."""
-    return ["openai/gpt-oss-20b"]
+    return ["openai/gpt-oss-20b", "Qwen/Qwen2.5-Coder-7B-Instruct"]
 
 
 def create_huggingface_chat(config, session_name: str) -> AssistantChatHuggingFace:
