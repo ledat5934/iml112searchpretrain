@@ -365,18 +365,38 @@ class AssistantChatHuggingFace(BaseAssistantChat):
             if hasattr(self.tokenizer, "apply_chat_template") and self.tokenizer.chat_template is not None:
                 # Extract text from messages - convert to format expected by chat template
                 formatted = []
-                for msg in messages:
-                    # Handle SystemMessage, HumanMessage, AIMessage
-                    if hasattr(msg, 'content') and msg.content:
-                        if isinstance(msg, SystemMessage):
-                            formatted.append({"role": "system", "content": str(msg.content)})
-                        elif isinstance(msg, HumanMessage):
-                            formatted.append({"role": "user", "content": str(msg.content)})
-                        elif isinstance(msg, AIMessage):
-                            formatted.append({"role": "assistant", "content": str(msg.content)})
+                for i, msg in enumerate(messages):
+                    # Get content - handle different ways content might be stored
+                    content = None
+                    msg_type = type(msg).__name__
+                    
+                    if hasattr(msg, 'content'):
+                        content = msg.content
+                    elif hasattr(msg, 'get') and callable(getattr(msg, 'get')):
+                        # Some message types might use dict-like interface
+                        content = msg.get('content', None)
+                    
+                    # Debug logging
+                    logger.debug(f"Message {i}: type={msg_type}, has_content={hasattr(msg, 'content')}, content_type={type(content).__name__ if content is not None else 'None'}, content_len={len(str(content)) if content is not None else 0}")
+                    
+                    # Convert to string and check if not empty
+                    if content is not None:
+                        content_str = str(content).strip()
+                        if content_str:  # Only add if content is not empty after stripping
+                            if isinstance(msg, SystemMessage):
+                                formatted.append({"role": "system", "content": content_str})
+                            elif isinstance(msg, HumanMessage):
+                                formatted.append({"role": "user", "content": content_str})
+                            elif isinstance(msg, AIMessage):
+                                formatted.append({"role": "assistant", "content": content_str})
+                            else:
+                                # Unknown message type - treat as user message
+                                logger.warning(f"Unknown message type: {msg_type}, treating as user message")
+                                formatted.append({"role": "user", "content": content_str})
                         else:
-                            # Unknown message type - treat as user message
-                            formatted.append({"role": "user", "content": str(msg.content)})
+                            logger.warning(f"Message {i} ({msg_type}) has empty content after stripping")
+                    else:
+                        logger.warning(f"Message {i} ({msg_type}) has no content attribute or content is None")
                 
                 # Only apply chat template if we have at least one message
                 if len(formatted) > 0:
@@ -399,15 +419,24 @@ class AssistantChatHuggingFace(BaseAssistantChat):
             # Fallback: concatenate messages
             text_parts = []
             for msg in messages:
-                if hasattr(msg, 'content') and msg.content:
-                    if isinstance(msg, SystemMessage):
-                        text_parts.append(f"System: {msg.content}")
-                    elif isinstance(msg, HumanMessage):
-                        text_parts.append(f"User: {msg.content}")
-                    elif isinstance(msg, AIMessage):
-                        text_parts.append(f"Assistant: {msg.content}")
-                    else:
-                        text_parts.append(str(msg.content))
+                # Get content - handle different ways content might be stored
+                content = None
+                if hasattr(msg, 'content'):
+                    content = msg.content
+                elif hasattr(msg, 'get') and callable(getattr(msg, 'get')):
+                    content = msg.get('content', None)
+                
+                if content is not None:
+                    content_str = str(content).strip()
+                    if content_str:  # Only add if content is not empty
+                        if isinstance(msg, SystemMessage):
+                            text_parts.append(f"System: {content_str}")
+                        elif isinstance(msg, HumanMessage):
+                            text_parts.append(f"User: {content_str}")
+                        elif isinstance(msg, AIMessage):
+                            text_parts.append(f"Assistant: {content_str}")
+                        else:
+                            text_parts.append(content_str)
             
             if text_parts:
                 return "\n".join(text_parts)
@@ -417,8 +446,20 @@ class AssistantChatHuggingFace(BaseAssistantChat):
                 
         except Exception as e:
             logger.error(f"Error formatting messages: {e}")
-            # Last resort fallback
-            content_parts = [str(msg.content) for msg in messages if hasattr(msg, 'content') and msg.content]
+            # Last resort fallback - try to extract any content
+            content_parts = []
+            for msg in messages:
+                content = None
+                if hasattr(msg, 'content'):
+                    content = msg.content
+                elif hasattr(msg, 'get') and callable(getattr(msg, 'get')):
+                    content = msg.get('content', None)
+                
+                if content is not None:
+                    content_str = str(content).strip()
+                    if content_str:
+                        content_parts.append(content_str)
+            
             if content_parts:
                 return "\n".join(content_parts)
             else:
