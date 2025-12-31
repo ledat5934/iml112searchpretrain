@@ -379,8 +379,24 @@ class AssistantChatHuggingFace(BaseAssistantChat):
             if not isinstance(generated_text, str):
                 generated_text = str(generated_text)
             
+            # Clean up generated text
+            generated_text = generated_text.strip()
+            
+            # Log first 500 chars to see what model generated (for debugging)
+            logger.info(f"Generated text (first 500 chars): {generated_text[:500]}")
+            
+            # Check if model generated conversational response instead of code
+            # Common patterns: greetings, explanations, etc.
+            conversational_patterns = [
+                "hello", "hi", "how can i help", "i can help", "i'll help",
+                "here's", "let me", "i'll generate", "i'll create"
+            ]
+            first_lower = generated_text[:100].lower()
+            if any(pattern in first_lower for pattern in conversational_patterns):
+                logger.warning(f"Model may have generated conversational response instead of code. First 200 chars: {generated_text[:200]}")
+            
             # Return as AIMessage
-            return AIMessage(content=generated_text.strip())
+            return AIMessage(content=generated_text)
             
         except Exception as e:
             logger.error(f"Error during model invocation: {e}")
@@ -456,12 +472,24 @@ class AssistantChatHuggingFace(BaseAssistantChat):
                 # Only apply chat template if we have at least one message
                 if len(formatted) > 0:
                     try:
+                        # For Qwen models, ensure system message is properly positioned
+                        # Qwen chat template expects: system (optional), then user messages
+                        # Reorder to put system message first if it exists
+                        system_msgs = [msg for msg in formatted if msg.get("role") == "system"]
+                        user_msgs = [msg for msg in formatted if msg.get("role") == "user"]
+                        assistant_msgs = [msg for msg in formatted if msg.get("role") == "assistant"]
+                        
+                        # Reorder: system first, then user/assistant messages
+                        reordered = system_msgs + user_msgs + assistant_msgs
+                        
                         formatted_text = self.tokenizer.apply_chat_template(
-                            formatted,
+                            reordered,
                             tokenize=False,
                             add_generation_prompt=True
                         )
                         if formatted_text and formatted_text.strip():
+                            # Log first 500 chars to debug (use INFO so it shows up)
+                            logger.info(f"Formatted input to model (first 500 chars): {formatted_text[:500]}")
                             return formatted_text
                     except (IndexError, KeyError, AttributeError, ValueError) as e:
                         logger.warning(f"Error applying chat template: {e}, using fallback")
