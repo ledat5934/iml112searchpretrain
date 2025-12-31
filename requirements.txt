@@ -192,3 +192,4 @@ tokenizers>=0.19
 safetensors>=0.4.0
 protobuf
 tf-keras
+bitsandbytes>=0.41.0  # For 4-bit quantization of GPT-OSS-20B

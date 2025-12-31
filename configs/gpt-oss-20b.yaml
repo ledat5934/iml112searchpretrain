@@ -1,0 +1,76 @@
+pipeline_timeout: 28800
+per_execution_timeout: 28800
+
+# Data Perception
+max_file_group_size_to_show: 5
+num_example_files_to_show: 1
+
+max_chars_per_file: 1024
+num_tutorial_retrievals: 30
+max_num_tutorials: 5
+max_user_input_length: 2048
+max_error_message_length: 2048
+max_error_lines_for_llm: 20  # Maximum lines of error message to send to LLM for debugging
+max_tutorial_length: 32768
+create_venv: false
+condense_tutorials: True
+use_tutorial_summary: True
+
+# Debug
+verbosity: 2
+
+# Default LLM Configuration (Gemini - cho non-coding agents)
+llm: &default_llm
+  provider: gemini
+  model: gemini-2.5-flash
+  max_tokens: 16384
+  proxy_url: null
+  temperature: 0.0
+  top_p: 0.9
+  verbose: True
+  multi_turn: False
+  template: null
+  add_coding_format_instruction: false
+
+# Coding backbone: GPT-OSS-20B với 4-bit quantization
+coding_backbone: &coding_backbone
+  provider: huggingface
+  model: openai/gpt-oss-20b
+  quantization: 4bit
+  device_map: auto
+  trust_remote_code: false
+  max_tokens: 8192
+  temperature: 0.0
+  verbose: True
+  multi_turn: False
+  template: null
+  add_coding_format_instruction: false
+
+# Non-coding agents: giữ Gemini
+description_analyzer:
+  <<: *default_llm
+
+profiling_summarizer:
+  <<: *default_llm
+
+# GuidelineAgent: giữ Gemini (theo yêu cầu)
+guideline_generator:
+  <<: *default_llm
+
+# Coding agents: dùng GPT-OSS-20B với 4-bit quantization
+preprocessing_coder:
+  <<: *coding_backbone
+
+modeling_coder:
+  <<: *coding_backbone
+
+monolithic_coder:
+  <<: *coding_backbone
+
+assembler:
+  <<: *coding_backbone
+
+# Comparison agent: giữ Gemini
+comparison:
+  <<: *default_llm
+

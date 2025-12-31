@@ -76,8 +76,25 @@ Examples:
              "'reactive' (no Guideline agent), 'mono' (monolithic coder without modular assembly), "
              "'static' (no intermediate execution/runtime verification)."
     )
+    parser.add_argument(
+        "--backbone-model",
+        type=str,
+        choices=["gemini", "gpt-oss-20b"],
+        default=None,
+        help="Backbone LLM for coding agents. Options: 'gemini' (default, uses config file), "
+             "'gpt-oss-20b' (4-bit quantized GPT-OSS-20B for coding agents, Gemini for others). "
+             "If not specified, uses the config file default."
+    )
     
     args = parser.parse_args()
+    
+    # Override config path if backbone-model is specified
+    if args.backbone_model == "gpt-oss-20b":
+        args.config = "configs/gpt-oss-20b.yaml"
+        print(f"Using GPT-OSS-20B (4-bit) as coding backbone. Config: {args.config}")
+    elif args.backbone_model == "gemini":
+        args.config = "configs/default.yaml"
+        print(f"Using Gemini as default. Config: {args.config}")
     
     # Call the main pipeline function from main_runner
     run_automl_pipeline(
