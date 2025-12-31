@@ -411,7 +411,23 @@ class AssistantChatHuggingFace(BaseAssistantChat):
         
         # Handle case where messages might be a tuple or other iterable
         if isinstance(messages, tuple):
-            messages = list(messages)
+            # If tuple contains a list, unwrap it
+            if len(messages) == 1 and isinstance(messages[0], (list, tuple)):
+                messages = list(messages[0])
+            else:
+                messages = list(messages)
+        
+        # Handle case where messages is a single item that's a list
+        if len(messages) == 1 and isinstance(messages[0], (list, tuple)):
+            # Check if it's a list of message objects (has 'content' attribute)
+            if len(messages[0]) > 0 and hasattr(messages[0][0], 'content'):
+                messages = list(messages[0])
+            # Check if it's a tuple like ("messages", [list of messages])
+            elif isinstance(messages[0], tuple) and len(messages[0]) >= 2:
+                # Check if second element is a list of message objects
+                if isinstance(messages[0][1], (list, tuple)) and len(messages[0][1]) > 0 and hasattr(messages[0][1][0], 'content'):
+                    messages = list(messages[0][1])
+                    logger.info(f"Unwrapped tuple structure: extracted {len(messages)} message objects")
         
         try:
             # Use chat template if available (automatically handles harmony format)
@@ -438,10 +454,46 @@ class AssistantChatHuggingFace(BaseAssistantChat):
                     elif isinstance(msg, dict):
                         content = msg.get('content', None)
                         role = msg.get('role', 'user')
-                    # Case 3: Tuple or list (unlikely but handle it)
+                    # Case 3: Tuple or list
                     elif isinstance(msg, (tuple, list)):
-                        if len(msg) >= 2:
-                            # Assume format like (role, content) or [role, content]
+                        # Check if this is a list of message objects (should have been unwrapped earlier, but handle it here too)
+                        if len(msg) > 0 and hasattr(msg[0], 'content'):
+                            # This is a nested list of message objects - unwrap and process each
+                            logger.warning(f"Message {i} is a list/tuple of message objects. Processing each message...")
+                            for sub_msg in msg:
+                                if hasattr(sub_msg, 'content') and sub_msg.content:
+                                    sub_content = str(sub_msg.content).strip()
+                                    if sub_content:
+                                        sub_role = "user"
+                                        if isinstance(sub_msg, SystemMessage):
+                                            sub_role = "system"
+                                        elif isinstance(sub_msg, HumanMessage):
+                                            sub_role = "user"
+                                        elif isinstance(sub_msg, AIMessage):
+                                            sub_role = "assistant"
+                                        formatted.append({"role": sub_role, "content": sub_content})
+                                        logger.info(f"  Unwrapped message: role={sub_role}, content_len={len(sub_content)}")
+                            continue  # Skip to next message in outer loop
+                        elif len(msg) >= 2:
+                            # Check if msg[1] is a list of message objects
+                            if isinstance(msg[1], (list, tuple)) and len(msg[1]) > 0 and hasattr(msg[1][0], 'content'):
+                                # Format: ("messages", [list of message objects])
+                                logger.warning(f"Message {i} is tuple with list of message objects. Unwrapping...")
+                                for sub_msg in msg[1]:
+                                    if hasattr(sub_msg, 'content') and sub_msg.content:
+                                        sub_content = str(sub_msg.content).strip()
+                                        if sub_content:
+                                            sub_role = "user"
+                                            if isinstance(sub_msg, SystemMessage):
+                                                sub_role = "system"
+                                            elif isinstance(sub_msg, HumanMessage):
+                                                sub_role = "user"
+                                            elif isinstance(sub_msg, AIMessage):
+                                                sub_role = "assistant"
+                                            formatted.append({"role": sub_role, "content": sub_content})
+                                            logger.info(f"  Unwrapped message: role={sub_role}, content_len={len(sub_content)}")
+                                continue  # Skip to next message in outer loop
+                            # Otherwise, assume format like (role, content) or [role, content]
                             role = str(msg[0]) if len(msg) > 0 else "user"
                             content = msg[1] if len(msg) > 1 else None
                         elif len(msg) == 1:
