@@ -252,6 +252,11 @@ class AssistantChatHuggingFace(BaseAssistantChat):
                 **model_kwargs
             )
             
+            # Set pad_token if it's the same as eos_token to avoid attention mask warnings
+            if self.tokenizer.pad_token is None or self.tokenizer.pad_token == self.tokenizer.eos_token:
+                self.tokenizer.pad_token = self.tokenizer.eos_token
+                self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
+            
             # Create pipeline
             self.pipeline = pipeline(
                 "text-generation",
@@ -277,21 +282,49 @@ class AssistantChatHuggingFace(BaseAssistantChat):
             # Convert LangChain messages to format expected by model
             formatted_input = self._format_messages(messages)
             
+            # Prepare generation kwargs
+            generation_kwargs = {
+                "max_new_tokens": self.max_tokens,
+                "return_full_text": False,
+                "do_sample": self.temperature > 0.0,
+            }
+            
+            # Only add temperature if do_sample is True
+            if self.temperature > 0.0:
+                generation_kwargs["temperature"] = self.temperature
+            
+            # Merge with any additional kwargs
+            generation_kwargs.update(kwargs)
+            
             # Generate response
             outputs = self.pipeline(
                 formatted_input,
-                max_new_tokens=self.max_tokens,
-                temperature=self.temperature,
-                return_full_text=False,
-                do_sample=self.temperature > 0.0,
-                **kwargs
+                **generation_kwargs
             )
             
-            # Extract generated text
-            if isinstance(outputs, list) and len(outputs) > 0:
-                generated_text = outputs[0].get("generated_text", "")
+            # Extract generated text with better error handling
+            generated_text = ""
+            if outputs is None:
+                logger.error("Pipeline returned None")
+                generated_text = ""
+            elif isinstance(outputs, list):
+                if len(outputs) > 0:
+                    first_output = outputs[0]
+                    if isinstance(first_output, dict):
+                        generated_text = first_output.get("generated_text", "")
+                    else:
+                        generated_text = str(first_output)
+                else:
+                    logger.warning("Pipeline returned empty list")
+                    generated_text = ""
+            elif isinstance(outputs, dict):
+                generated_text = outputs.get("generated_text", str(outputs))
             else:
                 generated_text = str(outputs)
+            
+            if not generated_text or generated_text.strip() == "":
+                logger.warning("Generated text is empty, returning empty response")
+                generated_text = ""
             
             # Return as AIMessage
             return AIMessage(content=generated_text)
@@ -313,22 +346,38 @@ class AssistantChatHuggingFace(BaseAssistantChat):
                     elif isinstance(msg, AIMessage):
                         formatted.append({"role": "assistant", "content": msg.content})
                 
-                # Apply chat template (automatically handles harmony format)
-                formatted_text = self.tokenizer.apply_chat_template(
-                    formatted,
-                    tokenize=False,
-                    add_generation_prompt=True
-                )
-                return formatted_text
-            else:
-                # Fallback: concatenate messages
-                text_parts = []
-                for msg in messages:
-                    if isinstance(msg, HumanMessage):
-                        text_parts.append(f"User: {msg.content}")
-                    elif isinstance(msg, AIMessage):
-                        text_parts.append(f"Assistant: {msg.content}")
+                # Only apply chat template if we have at least one message
+                if len(formatted) > 0:
+                    try:
+                        formatted_text = self.tokenizer.apply_chat_template(
+                            formatted,
+                            tokenize=False,
+                            add_generation_prompt=True
+                        )
+                        if formatted_text:
+                            return formatted_text
+                    except (IndexError, KeyError, AttributeError) as e:
+                        logger.warning(f"Error applying chat template: {e}, using fallback")
+                        # Fallback to simple concatenation
+                        pass
+                else:
+                    logger.warning("No messages to format, using fallback")
+            
+            # Fallback: concatenate messages
+            text_parts = []
+            for msg in messages:
+                if isinstance(msg, HumanMessage):
+                    text_parts.append(f"User: {msg.content}")
+                elif isinstance(msg, AIMessage):
+                    text_parts.append(f"Assistant: {msg.content}")
+                elif hasattr(msg, 'content'):
+                    text_parts.append(str(msg.content))
+            
+            if text_parts:
                 return "\n".join(text_parts)
+            else:
+                # Ultimate fallback
+                return "\n".join([str(msg) for msg in messages])
                 
         except Exception as e:
             logger.warning(f"Error formatting messages with chat template: {e}, using fallback")
