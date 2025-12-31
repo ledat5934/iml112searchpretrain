@@ -11,6 +11,11 @@ from .base_chat import BaseAssistantChat
 
 logger = logging.getLogger(__name__)
 
+# Module-level cache for model instances (shared across all AssistantChatHuggingFace instances)
+# Cache key: (model_id, quantization, device_map, trust_remote_code)
+# Cache value: {"tokenizer": tokenizer, "model": model, "pipeline": pipeline}
+_model_cache: Dict[tuple, Dict[str, Any]] = {}
+
 
 class AssistantChatHuggingFace(BaseAssistantChat):
     """HuggingFace local model with LangGraph support and 4-bit quantization."""
@@ -54,9 +59,32 @@ class AssistantChatHuggingFace(BaseAssistantChat):
         # Initialize conversation với LangGraph
         self.initialize_conversation(self)
     
+    def _get_cache_key(self) -> tuple:
+        """Generate cache key based on model configuration."""
+        return (self.model_id, self.quantization, self.device_map, self.trust_remote_code)
+    
     def _load_model(self):
-        """Load model với 4-bit quantization."""
-        logger.info(f"Loading HuggingFace model: {self.model_id} with {self.quantization} quantization")
+        """Load model với 4-bit quantization. Uses cache if available."""
+        cache_key = self._get_cache_key()
+        
+        # Check cache first
+        if cache_key in _model_cache:
+            logger.info(f"Reusing cached model: {self.model_id} with {self.quantization} quantization")
+            cached = _model_cache[cache_key]
+            self.tokenizer = cached["tokenizer"]
+            self.model = cached["model"]
+            # Create new pipeline for this instance (pipeline may have internal state)
+            self.pipeline = pipeline(
+                "text-generation",
+                model=self.model,
+                tokenizer=self.tokenizer,
+                device_map=self.device_map,
+            )
+            logger.info(f"Model reused from cache successfully (pipeline created for this instance)")
+            return
+        
+        # Cache miss - load model
+        logger.info(f"Loading HuggingFace model: {self.model_id} with {self.quantization} quantization (cache miss)")
         
         # Get HuggingFace token from environment (optional, for gated models or rate limiting)
         hf_token = os.environ.get("HUGGINGFACE_HUB_TOKEN") or os.environ.get("HF_TOKEN")
@@ -232,7 +260,12 @@ class AssistantChatHuggingFace(BaseAssistantChat):
                 device_map=self.device_map,
             )
             
-            logger.info(f"Model loaded successfully with {self.quantization} quantization")
+            # Cache model and tokenizer for reuse (pipeline is created per instance)
+            _model_cache[cache_key] = {
+                "tokenizer": self.tokenizer,
+                "model": self.model,
+            }
+            logger.info(f"Model loaded successfully with {self.quantization} quantization and cached for reuse")
             
         except Exception as e:
             logger.error(f"Failed to load HuggingFace model: {e}")
