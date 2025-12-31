@@ -195,8 +195,19 @@ class BaseAssistantChat(BaseModel):
 
         if hasattr(ai_message, "usage_metadata"):
             usage = ai_message.usage_metadata
-            input_tokens = usage.get("input_tokens", 0)
-            output_tokens = usage.get("output_tokens", 0)
+            # Defensive check: usage_metadata might be None
+            if usage is not None:
+                # Handle both dict and object with .get() method
+                if isinstance(usage, dict):
+                    input_tokens = usage.get("input_tokens", 0)
+                    output_tokens = usage.get("output_tokens", 0)
+                elif hasattr(usage, "get") and callable(getattr(usage, "get")):
+                    input_tokens = usage.get("input_tokens", 0)
+                    output_tokens = usage.get("output_tokens", 0)
+                else:
+                    # Try to access as attributes
+                    input_tokens = getattr(usage, "input_tokens", 0)
+                    output_tokens = getattr(usage, "output_tokens", 0)
 
             # Update both instance and global tracking
             self.input_tokens_ += input_tokens
