@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline, BitsAndBytesConfig
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
+from pydantic import Field
 
 from .base_chat import BaseAssistantChat
 
@@ -13,6 +14,17 @@ logger = logging.getLogger(__name__)
 
 class AssistantChatHuggingFace(BaseAssistantChat):
     """HuggingFace local model with LangGraph support and 4-bit quantization."""
+    
+    # Declare fields for Pydantic
+    model_id: str = Field(default="")
+    device_map: str = Field(default="auto")
+    quantization: str = Field(default="4bit")
+    max_tokens: int = Field(default=8192)
+    temperature: float = Field(default=0.0)
+    trust_remote_code: bool = Field(default=False)
+    tokenizer: Optional[Any] = Field(default=None, exclude=True)
+    model: Optional[Any] = Field(default=None, exclude=True)
+    pipeline: Optional[Any] = Field(default=None, exclude=True)
     
     def __init__(
         self,
@@ -25,19 +37,19 @@ class AssistantChatHuggingFace(BaseAssistantChat):
         session_name: str = "default_session",
         **kwargs
     ):
+        # Initialize base class first
+        super().__init__(session_name=session_name, **kwargs)
+        
+        # Set fields after super().__init__()
         self.model_id = model
         self.device_map = device_map
         self.quantization = quantization
         self.max_tokens = max_tokens
         self.temperature = temperature
         self.trust_remote_code = trust_remote_code
-        self.session_name = session_name
         
         # Load model và tokenizer
         self._load_model()
-        
-        # Initialize base class
-        super().__init__(**kwargs)
         
         # Initialize conversation với LangGraph
         self.initialize_conversation(self)
@@ -56,16 +68,26 @@ class AssistantChatHuggingFace(BaseAssistantChat):
             # Configure quantization
             quantization_config = None
             if self.quantization == "4bit":
-                quantization_config = BitsAndBytesConfig(
-                    load_in_4bit=True,
-                    bnb_4bit_compute_dtype=torch.float16,
-                    bnb_4bit_use_double_quant=True,
-                    bnb_4bit_quant_type="nf4"
-                )
-                logger.info("Using 4-bit quantization with BitsAndBytesConfig")
+                try:
+                    quantization_config = BitsAndBytesConfig(
+                        load_in_4bit=True,
+                        bnb_4bit_compute_dtype=torch.float16,
+                        bnb_4bit_use_double_quant=True,
+                        bnb_4bit_quant_type="nf4"
+                    )
+                    logger.info("Using 4-bit quantization with BitsAndBytesConfig")
+                except Exception as e:
+                    logger.error(f"Failed to create BitsAndBytesConfig for 4-bit quantization: {e}")
+                    logger.error("Please ensure bitsandbytes is installed: pip install bitsandbytes>=0.41.0")
+                    raise
             elif self.quantization == "8bit":
-                quantization_config = BitsAndBytesConfig(load_in_8bit=True)
-                logger.info("Using 8-bit quantization with BitsAndBytesConfig")
+                try:
+                    quantization_config = BitsAndBytesConfig(load_in_8bit=True)
+                    logger.info("Using 8-bit quantization with BitsAndBytesConfig")
+                except Exception as e:
+                    logger.error(f"Failed to create BitsAndBytesConfig for 8-bit quantization: {e}")
+                    logger.error("Please ensure bitsandbytes is installed: pip install bitsandbytes>=0.41.0")
+                    raise
             else:
                 logger.info(f"No quantization specified, using default dtype")
             
