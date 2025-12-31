@@ -406,6 +406,12 @@ class AssistantChatHuggingFace(BaseAssistantChat):
     
     def _format_messages(self, messages: List[BaseMessage]) -> str:
         """Convert LangChain messages to model format."""
+        # Handle ChatPromptValue (from prompt_template.invoke())
+        if hasattr(messages, 'messages'):
+            # ChatPromptValue has a .messages attribute containing the actual list
+            messages = messages.messages
+            logger.info(f"Extracted messages from ChatPromptValue: {len(messages)} messages")
+        
         if not messages:
             raise ValueError("Messages list cannot be empty")
         
