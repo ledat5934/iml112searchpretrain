@@ -308,10 +308,30 @@ class AssistantChatHuggingFace(BaseAssistantChat):
             generation_kwargs.update(kwargs)
             
             # Generate response
-            outputs = self.pipeline(
-                formatted_input,
-                **generation_kwargs
-            )
+            try:
+                outputs = self.pipeline(
+                    formatted_input,
+                    **generation_kwargs
+                )
+            except Exception as e:
+                logger.error(f"Pipeline generation failed: {e}")
+                logger.error(f"Formatted input (first 500 chars): {formatted_input[:500] if formatted_input else 'None'}")
+                raise
+            
+            # Log output for debugging (use INFO level so it shows up)
+            logger.info(f"Pipeline output type: {type(outputs)}")
+            if isinstance(outputs, list):
+                logger.info(f"Pipeline output list length: {len(outputs)}")
+                if len(outputs) > 0:
+                    logger.info(f"Pipeline output[0] type: {type(outputs[0])}")
+                    if isinstance(outputs[0], dict):
+                        logger.info(f"Pipeline output[0] keys: {list(outputs[0].keys())}")
+                    else:
+                        logger.info(f"Pipeline output[0] value: {outputs[0]}")
+            elif isinstance(outputs, dict):
+                logger.info(f"Pipeline output dict keys: {list(outputs.keys())}")
+            else:
+                logger.info(f"Pipeline output value (first 200 chars): {str(outputs)[:200]}")
             
             # Extract generated text - based on test, output is always list[dict] with 'generated_text' key
             generated_text = ""
@@ -324,19 +344,32 @@ class AssistantChatHuggingFace(BaseAssistantChat):
                     raise ValueError("Pipeline returned empty list")
                 
                 first_output = outputs[0]
+                
+                # Defensive check: first_output might be None
+                if first_output is None:
+                    logger.error(f"Pipeline output[0] is None. Full outputs: {outputs}")
+                    raise ValueError("Pipeline output[0] is None")
+                
                 if not isinstance(first_output, dict):
+                    logger.error(f"Pipeline output[0] is not a dict, got {type(first_output)}: {first_output}")
                     raise ValueError(f"Pipeline output[0] is not a dict, got {type(first_output)}: {first_output}")
                 
-                if "generated_text" not in first_output:
-                    raise ValueError(f"Pipeline output[0] does not contain 'generated_text' key. Keys: {first_output.keys()}")
+                # Defensive check: use .get() with default instead of direct access
+                generated_text = first_output.get("generated_text", None)
                 
-                generated_text = first_output["generated_text"]
-                
+                if generated_text is None:
+                    logger.error(f"Pipeline output[0] does not contain 'generated_text' key. Keys: {list(first_output.keys()) if first_output else 'None'}, Full output: {first_output}")
+                    raise ValueError(f"Pipeline output[0] does not contain 'generated_text' key. Keys: {list(first_output.keys()) if first_output else 'None'}")
+            
             elif isinstance(outputs, dict):
                 # Direct dict output (unlikely but handle it)
-                generated_text = outputs.get("generated_text", "")
+                generated_text = outputs.get("generated_text", None)
+                if generated_text is None:
+                    logger.error(f"Pipeline dict output does not contain 'generated_text' key. Keys: {list(outputs.keys())}")
+                    raise ValueError(f"Pipeline dict output does not contain 'generated_text' key. Keys: {list(outputs.keys())}")
             else:
                 # Unexpected format
+                logger.error(f"Pipeline returned unexpected type: {type(outputs)}, value: {outputs}")
                 raise ValueError(f"Pipeline returned unexpected type: {type(outputs)}, value: {outputs}")
             
             # Validate generated text
