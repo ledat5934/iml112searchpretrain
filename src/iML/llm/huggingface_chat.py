@@ -58,6 +58,13 @@ class AssistantChatHuggingFace(BaseAssistantChat):
         """Load model với 4-bit quantization."""
         logger.info(f"Loading HuggingFace model: {self.model_id} with {self.quantization} quantization")
         
+        # Get HuggingFace token from environment (optional, for gated models or rate limiting)
+        hf_token = os.environ.get("HUGGINGFACE_HUB_TOKEN") or os.environ.get("HF_TOKEN")
+        if hf_token:
+            logger.info("Using HuggingFace token from environment (for rate limiting/gated models)")
+        else:
+            logger.info("No HuggingFace token found - using anonymous access (works for public models)")
+        
         try:
             # Load tokenizer
             # Note: Some models may trigger 404 for additional_chat_templates, but this is harmless
@@ -65,7 +72,8 @@ class AssistantChatHuggingFace(BaseAssistantChat):
             try:
                 self.tokenizer = AutoTokenizer.from_pretrained(
                     self.model_id,
-                    trust_remote_code=self.trust_remote_code
+                    trust_remote_code=self.trust_remote_code,
+                    token=hf_token  # Pass token if available
                 )
             except Exception as e:
                 # Check if error is about additional_chat_templates (harmless 404)
@@ -73,47 +81,126 @@ class AssistantChatHuggingFace(BaseAssistantChat):
                 error_type = type(e).__name__
                 
                 # Check for 404 or RemoteEntryNotFoundError or additional_chat_templates
-                if ("additional_chat_templates" in error_str or 
-                    "404" in error_str or 
-                    "Entry Not Found" in error_str or
-                    "RemoteEntryNotFoundError" in error_type):
-                    logger.warning(f"additional_chat_templates not found (harmless 404). Retrying with use_fast=False...")
-                    # Retry with use_fast=False - this only affects tokenization speed, not functionality
-                    self.tokenizer = AutoTokenizer.from_pretrained(
-                        self.model_id,
-                        trust_remote_code=self.trust_remote_code,
-                        use_fast=False
-                    )
-                    logger.info("Tokenizer loaded successfully (slow tokenizer mode)")
+                is_additional_templates_error = (
+                    "additional_chat_templates" in error_str or 
+                    ("404" in error_str and "additional_chat_templates" in error_str.lower()) or
+                    ("Entry Not Found" in error_str and "additional_chat_templates" in error_str.lower())
+                )
+                
+                if is_additional_templates_error:
+                    logger.warning("additional_chat_templates not found (harmless 404). Retrying with use_fast=False...")
+                    # Retry with use_fast=False - wrap in try-except to handle if retry also fails
+                    try:
+                        self.tokenizer = AutoTokenizer.from_pretrained(
+                            self.model_id,
+                            trust_remote_code=self.trust_remote_code,
+                            use_fast=False,
+                            token=hf_token
+                        )
+                        logger.info("Tokenizer loaded successfully (slow tokenizer mode)")
+                    except Exception as e2:
+                        # If retry also fails, check if it's the same harmless error
+                        error_str2 = str(e2)
+                        is_same_error = (
+                            "additional_chat_templates" in error_str2 or
+                            ("404" in error_str2 and "additional_chat_templates" in error_str2.lower())
+                        )
+                        
+                        if is_same_error:
+                            # This is still the harmless additional_chat_templates error
+                            # Transformers library should handle this, but if it doesn't,
+                            # we can try to work around it by loading from cache or using a different method
+                            logger.warning("Retry also encountered additional_chat_templates 404. This is harmless.")
+                            logger.info("Attempting final load - transformers should handle this gracefully...")
+                            
+                            try:
+                                # Final attempt: explicitly set parameters to avoid the check
+                                self.tokenizer = AutoTokenizer.from_pretrained(
+                                    self.model_id,
+                                    trust_remote_code=self.trust_remote_code,
+                                    use_fast=False,
+                                    token=hf_token,
+                                    local_files_only=False
+                                )
+                                logger.info("Tokenizer loaded successfully after handling additional_chat_templates 404")
+                            except Exception as e3:
+                                # If still fails, log detailed error but this should be very rare
+                                logger.error(f"Unexpected error during tokenizer load after handling additional_chat_templates: {e3}")
+                                logger.error("This might indicate a different issue. Please check model availability and network connection.")
+                                raise
+                        else:
+                            # Different error in retry - re-raise
+                            logger.error(f"Different error during retry: {e2}")
+                            raise
                 else:
-                    # Re-raise if it's a different error
+                    # Re-raise if it's a different error (not about additional_chat_templates)
                     raise
             
-            # Configure quantization
+            # Check if model is pre-quantized (e.g., GPT-OSS-20B uses Mxfp4Config)
+            # Load config first to check quantization status
+            from transformers import AutoConfig
+            try:
+                model_config = AutoConfig.from_pretrained(
+                    self.model_id,
+                    trust_remote_code=self.trust_remote_code,
+                    token=hf_token
+                )
+                is_pre_quantized = hasattr(model_config, 'quantization_config') and model_config.quantization_config is not None
+                if is_pre_quantized:
+                    quant_type = type(model_config.quantization_config).__name__ if model_config.quantization_config else None
+                    logger.info(f"Model is pre-quantized with {quant_type}. Skipping additional quantization.")
+            except Exception as e:
+                logger.warning(f"Could not check model config: {e}. Proceeding with load...")
+                is_pre_quantized = False
+            
+            # Configure quantization (only if model is not pre-quantized)
             quantization_config = None
-            if self.quantization == "4bit":
+            
+            if not is_pre_quantized:
+                # Check if bitsandbytes is available
                 try:
-                    quantization_config = BitsAndBytesConfig(
-                        load_in_4bit=True,
-                        bnb_4bit_compute_dtype=torch.float16,
-                        bnb_4bit_use_double_quant=True,
-                        bnb_4bit_quant_type="nf4"
-                    )
-                    logger.info("Using 4-bit quantization with BitsAndBytesConfig")
-                except Exception as e:
-                    logger.error(f"Failed to create BitsAndBytesConfig for 4-bit quantization: {e}")
-                    logger.error("Please ensure bitsandbytes is installed: pip install bitsandbytes>=0.41.0")
-                    raise
-            elif self.quantization == "8bit":
-                try:
-                    quantization_config = BitsAndBytesConfig(load_in_8bit=True)
-                    logger.info("Using 8-bit quantization with BitsAndBytesConfig")
-                except Exception as e:
-                    logger.error(f"Failed to create BitsAndBytesConfig for 8-bit quantization: {e}")
-                    logger.error("Please ensure bitsandbytes is installed: pip install bitsandbytes>=0.41.0")
-                    raise
+                    import bitsandbytes as bnb
+                    bitsandbytes_available = True
+                    logger.info("bitsandbytes is available for quantization")
+                except ImportError:
+                    bitsandbytes_available = False
+                    logger.warning("bitsandbytes is not available. Quantization will be disabled.")
+                    logger.warning("To enable quantization, install bitsandbytes: pip install bitsandbytes>=0.41.0")
+                    logger.warning("Note: bitsandbytes requires CUDA and may not work on all environments (e.g., Kaggle CPU-only)")
+                
+                if bitsandbytes_available:
+                    if self.quantization == "4bit":
+                        try:
+                            quantization_config = BitsAndBytesConfig(
+                                load_in_4bit=True,
+                                bnb_4bit_compute_dtype=torch.float16,
+                                bnb_4bit_use_double_quant=True,
+                                bnb_4bit_quant_type="nf4"
+                            )
+                            logger.info("Using 4-bit quantization with BitsAndBytesConfig")
+                        except Exception as e:
+                            logger.error(f"Failed to create BitsAndBytesConfig for 4-bit quantization: {e}")
+                            logger.warning("Falling back to no quantization (full precision)")
+                            quantization_config = None
+                    elif self.quantization == "8bit":
+                        try:
+                            quantization_config = BitsAndBytesConfig(load_in_8bit=True)
+                            logger.info("Using 8-bit quantization with BitsAndBytesConfig")
+                        except Exception as e:
+                            logger.error(f"Failed to create BitsAndBytesConfig for 8-bit quantization: {e}")
+                            logger.warning("Falling back to no quantization (full precision)")
+                            quantization_config = None
+                    else:
+                        logger.info(f"No quantization specified, using default dtype")
+                else:
+                    # bitsandbytes not available - disable quantization
+                    if self.quantization in ["4bit", "8bit"]:
+                        logger.warning(f"Requested {self.quantization} quantization but bitsandbytes is not available.")
+                        logger.warning("Continuing without quantization (full precision). Model will use more memory.")
+                    else:
+                        logger.info(f"No quantization specified, using default dtype")
             else:
-                logger.info(f"No quantization specified, using default dtype")
+                logger.info("Model is pre-quantized. Using model's built-in quantization (no additional quantization needed).")
             
             # Load model
             model_kwargs = {
@@ -121,10 +208,16 @@ class AssistantChatHuggingFace(BaseAssistantChat):
                 "trust_remote_code": self.trust_remote_code,
             }
             
-            if quantization_config:
+            # Only add quantization_config if model is not pre-quantized
+            if quantization_config and not is_pre_quantized:
                 model_kwargs["quantization_config"] = quantization_config
-            else:
+            elif not is_pre_quantized:
+                # Only set torch_dtype if model is not pre-quantized
                 model_kwargs["torch_dtype"] = torch.float16
+            
+            # Add token to model_kwargs if available
+            if hf_token:
+                model_kwargs["token"] = hf_token
             
             self.model = AutoModelForCausalLM.from_pretrained(
                 self.model_id,
