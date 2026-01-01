@@ -79,10 +79,12 @@ Examples:
     parser.add_argument(
         "--backbone-model",
         type=str,
-        choices=["gemini", "gpt-oss-20b"],
+        choices=["gemini", "gpt-oss-20b", "openai"],
         default=None,
-        help="Backbone LLM for coding agents. Options: 'gemini' (default, uses config file), "
-             "'gpt-oss-20b' (uses Qwen2.5-Coder-7B-Instruct with 8-bit quantization for coding agents, Gemini for others). "
+        help="Backbone LLM for coding agents. Options: "
+             "'gemini' (default, uses config file), "
+             "'gpt-oss-20b' (uses Qwen2.5-Coder-7B-Instruct with 4-bit quantization for coding agents, Gemini for others), "
+             "'openai' (uses gpt-4o-mini for coding agents, Gemini for others). "
              "If not specified, uses the config file default."
     )
     
@@ -92,6 +94,10 @@ Examples:
     if args.backbone_model == "gpt-oss-20b":
         args.config = "configs/gpt-oss-20b.yaml"
         print(f"Using Qwen2.5-Coder-7B-Instruct (4-bit) as coding backbone. Config: {args.config}")
+    elif args.backbone_model == "openai":
+        args.config = "configs/openai-coder.yaml"
+        print(f"Using OpenAI gpt-4o-mini as coding backbone. Config: {args.config}")
+        print("Note: Ensure OPENAI_API_KEY is set in environment variables.")
     elif args.backbone_model == "gemini":
         args.config = "configs/default.yaml"
         print(f"Using Gemini as default. Config: {args.config}")
