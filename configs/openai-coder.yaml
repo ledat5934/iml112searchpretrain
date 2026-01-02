@@ -35,7 +35,7 @@ llm: &default_llm
 # Coding backbone: OpenAI gpt-4o-mini cho coding agents
 coding_backbone: &coding_backbone
   provider: openai
-  model: gpt-4o-mini
+  model: gpt-o4-mini
   max_tokens: 16384
   proxy_url: null
   temperature: 0.0
