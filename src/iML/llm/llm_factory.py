@@ -62,7 +62,7 @@ class ChatLLMFactory:
         valid_models = cls.get_valid_models(provider)
         # Skip model validation for huggingface provider (allow any model ID)
         if provider != "huggingface":
-            valid_models = ['gemini-2.5-flash', 'gpt-4o-mini', 'gpt-o4-mini']
+            valid_models = ['gemini-2.5-flash', 'gpt-4o-mini', 'gpt-o4-mini', 'gpt-4o']
             if model not in valid_models:
                 if model[3:] not in valid_models:  # TODO: better logic for cross region inference
                     raise ValueError(
