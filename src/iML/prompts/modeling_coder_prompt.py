@@ -181,6 +181,7 @@ For Pretrained Models (prioritize PyTorch):
 - Use PyTorch-specific optimizers and schedulers
 - Implement gradual unfreezing strategy if needed
 - Prefer torch.nn.functional and PyTorch ecosystem
+- You should set ignore_mismatched_sizes=True
 - You should use large number of epochs(15, 20, ...) with early stopping = 3
 """
         else:
