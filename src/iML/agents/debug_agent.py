@@ -44,30 +44,27 @@ class DebugAgent(BaseAgent):
 """
         )
         self.BUG_REFINE_INSTR = (
-            """# Task description
-{task_description}
-
-# Description analysis (JSON)
-{description_json}
-
-# Code with an error:
+            """# Code with error:
 {code}
 
-# Error:
+# Error summary:
 {bug}
 
-# Output constraint
-{submission_path_note}
+# Input file paths:
+{input_paths}
 
-# Your task
-- Please revise the code to fix the error.
-- If the error is a 'module not found` error, then install the necessary module. You can use `pip install <module>`, where `<module>` is the name of the module to install.
+# Output file path:
+{output_path}
+
+# Your task:
+- Fix the error in the code above.
+- Use the input files from the paths provided.
+- Save output to the output path if needed.
+- If the error is a 'module not found' error, install the necessary module using `pip install <module>`.
 - Do not remove subsampling if exists.
-- Provide the improved, self-contained Python script again.
-- There should be no additional headings or text in your response.
-- Remember to print a line in the code with 'Final Validation Performance: {final_validation_score}' so we can parse performance.
-- The code should be a single-file python program that is self-contained and can be executed as-is.
-- Your response should only contain a single code block.
+- Remember to print a line in the code with 'Final Validation Performance: {{final_validation_score}}' so we can parse performance.
+- Provide only the corrected Python code in a code block.
+- The code should be self-contained and executable as-is.
 - Do not use exit() function in the refined Python code."""
         )
 
@@ -135,30 +132,32 @@ class DebugAgent(BaseAgent):
         return None
 
     def _llm_refine_code(self, task_description: str, code: str, bug_summary: str, phase_name: str, attempt_index: int) -> tuple[str, str, str]:
-        # Pull description from manager to include context
+        # Get input file paths from description
         description = self._get_description() or {}
-        try:
-            description_json = json.dumps(description, ensure_ascii=False, indent=2)
-        except Exception:
-            description_json = json.dumps(description, indent=2)
-        raw_text = ""
-        # If assembling, enforce explicit absolute submission path in the prompt
-        submission_path_note = ""
+        input_paths_list = description.get("link to the dataset", [])
+        if not isinstance(input_paths_list, list):
+            input_paths_list = []
+        input_paths = "\n".join([f"- {path}" for path in input_paths_list]) if input_paths_list else "No input paths specified"
+        
+        # Get output file path
+        output_path = getattr(self.manager, 'output_folder', '.')
         if phase_name == "assemble":
+            # For assemble phase, specify the submission file path
             expected_name = "submission.csv"
             try:
-                expected_abs = os.path.join(getattr(self.manager, 'output_folder', '.'), expected_name)
+                output_path = os.path.join(output_path, expected_name)
             except Exception:
-                expected_abs = expected_name
-            submission_path_note = f"If you produce a submission file, you MUST save it to this absolute path: {expected_abs}."
+                output_path = expected_name
+        else:
+            # For other phases, just use the output folder
+            output_path = output_path
 
+        raw_text = ""
         prompt_text = self.BUG_REFINE_INSTR.format(
-            task_description=task_description or "",
-            description_json=description_json,
             code=code,
             bug=bug_summary,
-            final_validation_score="{final_validation_score}",
-            submission_path_note=submission_path_note,
+            input_paths=input_paths,
+            output_path=output_path,
         )
         if ADK_AVAILABLE:
             # Use ADK runner with a single Agent having google_search tool
