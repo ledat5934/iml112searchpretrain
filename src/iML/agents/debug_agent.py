@@ -2,6 +2,7 @@ import re
 import os
 import json
 import difflib
+import logging
 from typing import Dict, Any, List, Tuple, Optional
 
 from .base_agent import BaseAgent
@@ -27,6 +28,7 @@ class DebugAgent(BaseAgent):
     def __init__(self, config, manager, max_rounds: int = 5):
         super().__init__(config=config, manager=manager)
         self.max_rounds = max_rounds
+        self.logger = logging.getLogger(__name__)
         # Prompts for LLM-based debug
         self.BUG_SUMMARY_INSTR = (
             """# Error report
@@ -117,6 +119,11 @@ class DebugAgent(BaseAgent):
         # Run single-turn summary
         chat = ChatLLMFactory.get_chat_model(llm_config, session_name=f"single_turn_bug_summary_{phase_name}")
         chat.initialize_conversation(chat, system_prompt="You are a concise debugging assistant.")
+        self.logger.info(
+            f"[DEBUG_AGENT] step=bug_summary phase={phase_name} attempt_index={attempt_index} "
+            f"llm_provider={getattr(llm_config, 'provider', None) or llm_config.get('provider', None)} "
+            f"llm_model={getattr(llm_config, 'model', None) or llm_config.get('model', None)}"
+        )
         summary = chat.assistant_chat(prompt)
         # Save into the step/attempt folder
         save_name = f"{phase_name}/attempt_{attempt_index}/bug_summary.txt"
@@ -168,6 +175,10 @@ class DebugAgent(BaseAgent):
                 return prompt_text
 
             model_name = os.getenv("BUG_FIX_MODEL", "gemini-2.5-flash")
+            self.logger.info(
+                f"[DEBUG_AGENT] step=refine phase={phase_name} attempt_index={attempt_index} "
+                f"adk_available=True google_search_tool_enabled=True bug_fix_model={model_name}"
+            )
             agent = adk_agents.Agent(
                 model=model_name,
                 name="bug_refine_agent",
@@ -194,14 +205,60 @@ class DebugAgent(BaseAgent):
                     app_name="bug-refine", user_id=user_id, session_id=session_id
                 )
                 out_text = ""
+                event_summaries: List[Dict[str, Any]] = []
+                saw_google_search = False
                 user_msg = adk_types.Content(role="user", parts=[adk_types.Part(text="run")])
                 async for event in runner.run_async(
                     session_id=session_id, user_id=user_id, new_message=user_msg
                 ):
+                    # Best-effort tracing to detect whether google_search was invoked.
+                    try:
+                        ev_dump = None
+                        if hasattr(event, "model_dump"):
+                            ev_dump = event.model_dump()
+                        elif hasattr(event, "dict"):
+                            ev_dump = event.dict()
+                        if ev_dump is not None:
+                            ev_json = json.dumps(ev_dump, ensure_ascii=False, default=str)
+                            if "google_search" in ev_json:
+                                saw_google_search = True
+                            # Keep summaries small
+                            event_summaries.append(
+                                {
+                                    "type": type(event).__name__,
+                                    "has_content": bool(getattr(event, "content", None)),
+                                    "keys": list(ev_dump.keys()) if isinstance(ev_dump, dict) else None,
+                                }
+                            )
+                        else:
+                            s = str(event)
+                            if "google_search" in s:
+                                saw_google_search = True
+                            event_summaries.append({"type": type(event).__name__, "repr_head": s[:300]})
+                    except Exception:
+                        pass
                     if event.content and event.content.parts:
                         for part in event.content.parts:
                             if getattr(part, "text", None):
                                 out_text += part.text or ""
+                # Save ADK trace next to this attempt (best effort)
+                try:
+                    self.manager.save_and_log_states(
+                        json.dumps(
+                            {
+                                "adk_available": True,
+                                "bug_fix_model": model_name,
+                                "google_search_tool_enabled": True,
+                                "saw_google_search_token": saw_google_search,
+                                "event_summaries": event_summaries[:200],
+                            },
+                            ensure_ascii=False,
+                            indent=2,
+                        ),
+                        f"{phase_name}/attempt_{attempt_index}/adk_trace.json",
+                    )
+                except Exception:
+                    pass
                 return out_text
 
             try:
@@ -219,6 +276,10 @@ class DebugAgent(BaseAgent):
             llm_config = getattr(self.manager.assembler_agent, 'llm_config', None)
             if llm_config is None:
                 raise RuntimeError("LLM config not available for bug refine.")
+            self.logger.info(
+                f"[DEBUG_AGENT] step=refine phase={phase_name} attempt_index={attempt_index} "
+                f"adk_available=False google_search_tool_enabled=False"
+            )
             chat = ChatLLMFactory.get_chat_model(llm_config, session_name="single_turn_bug_refine")
             chat.initialize_conversation(chat, system_prompt="You are a senior Python engineer.")
             out = chat.assistant_chat(prompt_text)
@@ -238,6 +299,11 @@ class DebugAgent(BaseAgent):
         existence of the expected submission file (defaults to 'submission.csv' in manager.output_folder).
         """
         current = code
+        self.logger.info(
+            f"[DEBUG_AGENT] start llm_debug_fix phase={phase_name} attempt={attempt} max_rounds={self.max_rounds} "
+            f"require_submission={require_submission} submission_filename={submission_filename or 'submission.csv'} "
+            f"adk_available={ADK_AVAILABLE}"
+        )
         for round_idx in range(1, self.max_rounds + 1):
             # The bug summary must be stored with the code that produced the error
             bug_attempt_index = attempt + (round_idx - 1)  # first round -> current failed attempt
@@ -246,6 +312,10 @@ class DebugAgent(BaseAgent):
             # 2) Refine code for the next attempt
             refined_attempt_index = bug_attempt_index + 1
             refined, raw_text, prompt_text = self._llm_refine_code(task_description or "", current, bug_summary, phase_name, refined_attempt_index)
+            self.logger.detail(
+                f"[DEBUG_AGENT] round={round_idx} phase={phase_name} refined_attempt_index={refined_attempt_index} "
+                f"refined_len={len(refined) if refined else 0} raw_len={len(raw_text) if raw_text else 0}"
+            )
             if not refined or len(refined.strip()) < 5:
                 # nothing returned, abort
                 return False, current, {"rounds": round_idx, "reason": "empty_refine", "last_attempt_index": refined_attempt_index}
@@ -269,6 +339,10 @@ class DebugAgent(BaseAgent):
                 out_dir = getattr(self.manager, 'output_folder', None) or "."
                 expected = submission_filename or "submission.csv"
                 ok = os.path.exists(os.path.join(out_dir, expected))
+            self.logger.info(
+                f"[DEBUG_AGENT] round={round_idx} phase={phase_name} attempt_index={refined_attempt_index} "
+                f"exec_success={bool(result.get('success'))} require_submission_ok={ok}"
+            )
             # Debug round logging (short)
             tail = (result.get("stderr") or "").splitlines()[-10:]
             tail_text = "\n".join(tail)

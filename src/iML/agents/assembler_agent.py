@@ -50,6 +50,10 @@ class AssemblerAgent(BaseAgent):
 
         for attempt in range(self.max_retries):
             logger.info(f"Assembly and execution attempt {attempt + 1}/{self.max_retries}...")
+            logger.detail(f"[ASSEMBLER] attempt={attempt+1} max_retries={self.max_retries} submission_path={submission_path}")
+            if error_message:
+                tail = str(error_message).splitlines()[-5:]
+                logger.detail(f"[ASSEMBLER] attempt={attempt+1} previous_error_tail=\n" + "\n".join(tail))
 
             # 1. Assemble/Fix code
             # On first attempt, error_message is None, LLM will just assemble.
@@ -82,6 +86,10 @@ class AssemblerAgent(BaseAgent):
             
             # 2. Execute final code
             execution_result = self.manager.execute_code(final_code, "assemble", attempt + 1)
+            logger.detail(
+                f"[ASSEMBLER] attempt={attempt+1} exec_success={bool(execution_result.get('success'))} "
+                f"submission_exists={os.path.exists(submission_path)}"
+            )
             
             if execution_result["success"]:
                 # Treat as success only if submission.csv exists
@@ -94,6 +102,7 @@ class AssemblerAgent(BaseAgent):
                 else:
                     logger.error("Execution returned success but submission.csv was not found. Will attempt debug fix.")
                     error_message = execution_result.get("stderr", "Missing submission.csv after run")
+                    logger.info(f"[ASSEMBLER->DEBUG_AGENT] trigger=missing_submission attempt={attempt+1} debug_enabled={self.manager.is_debug_enabled()}")
                     # Invoke the same two-step LLM debug flow even when return code is 0 but artifact missing
                     last_10_lines = error_message.split('\n')[-10:]
                     error_to_log = '\n'.join(last_10_lines)
@@ -118,6 +127,7 @@ class AssemblerAgent(BaseAgent):
                         require_submission=True,
                         submission_filename="submission.csv",
                     )
+                    logger.info(f"[DEBUG_AGENT->ASSEMBLER] ok={ok} attempt={attempt+1} meta={meta}")
                     if ok:
                         # DebugAgent already ran the refined code successfully and enforced submission existence
                         if os.path.exists(submission_path):
@@ -135,6 +145,7 @@ class AssemblerAgent(BaseAgent):
                 last_10_lines = error_message.split('\n')[-10:]
                 error_to_log = '\n'.join(last_10_lines)
                 logger.warning(f"Code execution failed on attempt {attempt + 1}. Error: {error_message}")
+                logger.info(f"[ASSEMBLER->DEBUG_AGENT] trigger=exec_failed attempt={attempt+1} debug_enabled={self.manager.is_debug_enabled()}")
                 dataset_paths = (self.manager.description_analysis or {}).get('link to the dataset', [])
                 self.manager.save_and_log_states(
                     f"---ATTEMPT {attempt+1}---\nDATASET PATHS:\n{dataset_paths}\n\nCODE:\n{final_code}\n\nERROR:\n{error_to_log}",
@@ -156,6 +167,7 @@ class AssemblerAgent(BaseAgent):
                     require_submission=True,
                     submission_filename="submission.csv",
                 )
+                logger.info(f"[DEBUG_AGENT->ASSEMBLER] ok={ok} attempt={attempt+1} meta={meta}")
                 if ok:
                     # DebugAgent already ran refined code and ensured submission
                     if os.path.exists(submission_path):
