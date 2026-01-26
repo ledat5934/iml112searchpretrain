@@ -1,5 +1,4 @@
 import os
-import pandas as pd
 from pathlib import Path
 from typing import List
 
@@ -16,53 +15,49 @@ def _build_tree_conditional_limit(
     - Otherwise, it shows all files.
     """
     try:
-        # Get all entries and sort them with directories first
-        entries = sorted(
-            [p for p in dir_path.iterdir()],
-            key=lambda p: (p.is_file(), p.name.lower())
-        )
+        # Keep filesystem order; do not sort
+        entries = [p for p in dir_path.iterdir()]
     except OSError as e:
         lines.append(f"{prefix}└── [Error reading directory: {e}]")
         return
 
-    # Separate directories and all files
+    # Separate directories and all files (skip description.txt)
     dirs = [e for e in entries if e.is_dir()]
     all_files = [e for e in entries if e.is_file() and e.name.lower() != "description.txt"]
 
-    # --- START of New Conditional Logic ---
-    display_files = []
-    has_more_files = False
+    # Group files by extension (case-insensitive), keep original order
+    groups_in_order = []
+    groups_map = {}
+    for file_entry in all_files:
+        suffix_key = file_entry.suffix.lower()
+        if suffix_key not in groups_map:
+            groups_map[suffix_key] = []
+            groups_in_order.append(suffix_key)
+        groups_map[suffix_key].append(file_entry)
 
-    if len(all_files) > 50:
-        display_files = all_files[:3]
-        has_more_files = True
-    else:
-        display_files = all_files
-        has_more_files = False
-    # --- END of New Conditional Logic ---
-
-    # Combine directories and the limited list of files for display in the tree
-    entries_to_process = dirs + display_files
+    # Build display list: dirs first, then file groups (max 3 per extension) + "..." per group
+    entries_to_process = []
+    for entry in dirs:
+        entries_to_process.append((entry, True, False, entry.name))
+    for suffix_key in groups_in_order:
+        files_in_group = groups_map[suffix_key]
+        for file_entry in files_in_group[:3]:
+            entries_to_process.append((file_entry, False, False, file_entry.name))
+        if len(files_in_group) > 3:
+            entries_to_process.append((None, False, True, "..."))
 
     # Process each entry to build the tree structure
-    for i, entry in enumerate(entries_to_process):
-        # Determine if this entry is the last one to be displayed
-        is_last_in_list = (i == len(entries_to_process) - 1)
-        is_last_node = is_last_in_list and not has_more_files
-
+    for i, (entry, is_dir, is_ellipsis, display_name) in enumerate(entries_to_process):
+        is_last_node = (i == len(entries_to_process) - 1)
         connector = "└── " if is_last_node else "├── "
-        lines.append(f"{prefix}{connector}{entry.name}")
+        lines.append(f"{prefix}{connector}{display_name}")
 
-        if entry.is_dir():
+        if is_dir and entry is not None:
             # If it's a directory, continue recursively with the correct prefix
             new_prefix = prefix + ("    " if is_last_node else "│   ")
             _build_tree_conditional_limit(
                 entry, new_prefix, lines, csv_paths_collector, root_dir
             )
-
-    # If files were omitted based on the condition, add an ellipsis "..." indicator
-    if has_more_files:
-        lines.append(f"{prefix}└── ...")
 
     # Go through ALL files (not just the displayed ones) to collect every CSV
     for file_entry in all_files:
@@ -74,7 +69,8 @@ def _build_tree_conditional_limit(
 
 def get_directory_structure(
     root_dir: str,
-    sample_rows: int = 5
+    sample_rows: int = 5,
+    include_csv_summary: bool = True,
 ) -> str:
     """
     Generates a string representing the directory structure as a tree 
@@ -111,7 +107,16 @@ def get_directory_structure(
 
     summary_lines: List[str] = []
     # --- Part 2: Summarize the collected CSV files ---
-    if csv_paths:
+    if include_csv_summary and sample_rows > 0 and csv_paths:
+        try:
+            import pandas as pd
+        except Exception as e:
+            summary_lines.append("\n" + "=" * 60)
+            summary_lines.append("SUMMARY OF ALL CSV FILES")
+            summary_lines.append("=" * 60)
+            summary_lines.append(f"\nCould not import pandas for CSV summary: {e}")
+            final_output = "\n".join(tree_lines) + "\n".join(summary_lines)
+            return final_output
         summary_lines.append("\n" + "="*60)
         summary_lines.append("SUMMARY OF ALL CSV FILES")
         summary_lines.append("="*60)
