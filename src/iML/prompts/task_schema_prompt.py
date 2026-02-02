@@ -32,42 +32,42 @@ You must rely on the description and profiling evidence. Use your best judgment,
 
 ## OUTPUT REQUIREMENTS
 Return a SINGLE JSON object with the following fields (add more if needed, but keep it concise):
-{
-  "task_overview": {
+{{
+  "task_overview": {{
     "objective": "...",
     "modality": "tabular|image|text|audio|video|multimodal|unknown",
     "prediction_level": "sample|token|pixel|instance|sequence|unknown"
-  },
-  "label_schema": {
+  }},
+  "label_schema": {{
     "format": "column_class|yolo_txt|mask_png|jsonl_spans|sequence_target|unknown",
     "target_columns_or_files": ["..."],
     "notes": "..."
-  },
-  "prediction_schema": {
+  }},
+  "prediction_schema": {{
     "type": "class_label|probabilities|boxes|masks|sequence|unknown",
     "notes": "..."
-  },
-  "evaluation_spec": {
+  }},
+  "evaluation_spec": {{
     "metrics": ["..."],
     "validation_strategy": "random_split|time_split|group_split|rolling_origin|unknown",
     "leakage_warnings": ["..."]
-  },
-  "submission_spec": {
+  }},
+  "submission_spec": {{
     "format": "csv|json|coco_json|unknown",
     "id_rules": "with_extensions|without_extensions|unknown",
     "required_columns": ["..."],
     "notes": "..."
-  },
-  "constraints": {
+  }},
+  "constraints": {{
     "random_state_required": true,
     "memory_notes": "...",
     "time_budget_notes": "..."
-  },
+  }},
   "assumptions": ["..."],
   "evidence": [
-    {"claim": "...", "evidence": "...", "confidence": 0.0}
+    {{"claim": "...", "evidence": "...", "confidence": 0.0}}
   ]
-}
+}}
 
 IMPORTANT:
 - Output MUST be valid JSON (no markdown, no code fences).

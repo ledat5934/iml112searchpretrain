@@ -33,19 +33,19 @@ ITERATION TYPE: {iteration_type}
 
 ## OUTPUT REQUIREMENTS
 Return a SINGLE JSON object with the following fields (add more if needed, but keep it concise):
-{
+{{
   "iteration_type": "{iteration_type}",
   "preprocessing_recommendations": [
-    {"step": "...", "details": "..."}
+    {{"step": "...", "details": "..."}}
   ],
   "training_recommendations": [
-    {"item": "...", "details": "..."}
+    {{"item": "...", "details": "..."}}
   ],
-  "validation_and_metrics": {
+  "validation_and_metrics": {{
     "metrics": ["..."],
     "split_strategy": "...",
     "notes": "..."
-  },
+  }},
   "submission_notes": [
     "..."
   ],
@@ -59,7 +59,7 @@ Return a SINGLE JSON object with the following fields (add more if needed, but k
     "..."
   ],
   "notes": "This pack is guidance only; do not include example code."
-}
+}}
 
 IMPORTANT:
 - Output MUST be valid JSON (no markdown, no code fences).
