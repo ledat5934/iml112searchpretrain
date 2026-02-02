@@ -130,39 +130,40 @@ class ModelRetrieverAgent(BaseAgent):
             return []
 
     def _validate_huggingface_model(self, model_link: str) -> bool:
-        """Validate if a HuggingFace model exists by checking the model page."""
-        if not model_link or "huggingface.co" not in model_link:
-            logger.warning(f"Invalid HuggingFace link format: {model_link}")
-            return False
+        """
+        Soft-validate HuggingFace model link existence.
+
+        Policy:
+        - If model_link is missing or not a HuggingFace URL: SKIP validation (return True).
+        - If HuggingFace returns 404: reject (return False).
+        - For any other status (200/3xx/401/403/5xx) or network issues: do NOT reject (return True),
+          because Kaggle/network/gated-model conditions can produce false negatives.
+        """
+        if not model_link:
+            return True
+        if "huggingface.co" not in model_link:
+            # Not a HuggingFace URL (could be a library pretrained, local, or other hub).
+            return True
         
         try:
             import requests
             response = requests.head(model_link, timeout=10, allow_redirects=True)
             
-            # Only 200 OK is considered valid
-            if response.status_code == 200:
-                logger.debug(f"Model verified (200 OK): {model_link}")
-                return True
-            elif response.status_code == 404:
+            if response.status_code == 404:
                 logger.warning(f"Model not found (404): {model_link}")
                 return False
-            elif response.status_code == 401:
-                logger.warning(f"Model unauthorized/private (401): {model_link}")
-                return False  # Treat 401 as invalid - can't use private models
-            elif response.status_code == 403:
-                logger.warning(f"Model access forbidden (403): {model_link}")
-                return False
-            else:
-                # For other status codes (500, 502, etc.), still reject
-                logger.warning(f"Model validation failed (status {response.status_code}): {model_link}")
-                return False
+            if response.status_code != 200:
+                # Soft-pass for non-404 statuses to avoid false negatives.
+                logger.warning(
+                    f"Model link validation returned status {response.status_code}; keeping candidate (soft validation): {model_link}"
+                )
+            return True
         except requests.exceptions.Timeout:
-            logger.warning(f"Timeout validating model (>10s): {model_link}")
-            return False
+            logger.warning(f"Timeout validating model (>10s); keeping candidate (soft validation): {model_link}")
+            return True
         except Exception as e:
-            logger.warning(f"Error validating model {model_link}: {e}")
-            # Network errors - reject to be safe
-            return False
+            logger.warning(f"Error validating model; keeping candidate (soft validation): {model_link} err={e}")
+            return True
 
     def __call__(self) -> Dict[str, Any]:
         self.manager.log_agent_start("ModelRetrieverAgent: retrieving pretrained SOTA models via ADK...")

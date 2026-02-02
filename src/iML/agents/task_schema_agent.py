@@ -58,6 +58,7 @@ class TaskSchemaAgent(BaseAgent):
             profiling_summary=profiling_summary,
             directory_structure=directory_structure,
         )
+        self.manager.save_and_log_states(prompt, "task_schema_prompt.txt")
 
         response = self.llm.assistant_chat(prompt)
         self.manager.save_and_log_states(response, "task_schema_raw_response.txt")

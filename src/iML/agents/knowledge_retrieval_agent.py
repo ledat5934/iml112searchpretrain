@@ -44,9 +44,10 @@ class KnowledgeRetrievalAgent(BaseAgent):
             model_suggestions=model_suggestions,
             architecture_suggestions=architecture_suggestions,
         )
+        save_suffix = iteration_type or "default"
+        self.manager.save_and_log_states(prompt, f"knowledge/knowledge_{save_suffix}_prompt.txt")
 
         response = self.llm.assistant_chat(prompt)
-        save_suffix = iteration_type or "default"
         self.manager.save_and_log_states(response, f"knowledge/knowledge_{save_suffix}_raw_response.txt")
 
         knowledge_pack = self.prompt_handler.parse(response)
