@@ -23,7 +23,7 @@ class ComparisonPrompt(BasePrompt):
 {iteration_results_formatted}
 
 ## Your Analysis Task:
-1. **Extract Performance Metrics**: Find and extract validation scores, CV scores, accuracy, F1, RMSE, etc. from each iteration's execution output
+1. **Extract Performance Metrics**: Find and extract validation scores (single holdout), accuracy, F1, RMSE, etc. from each iteration's execution output
 2. **Evaluate Performance**: Compare the extracted metrics for each iteration
 3. **Consider Task Type**: Weight metrics appropriately based on the ML task (classification vs regression)
 4. **Assess Reliability**: Consider execution stability, error rates, and consistency
@@ -32,7 +32,7 @@ class ComparisonPrompt(BasePrompt):
 
 ## Evaluation Criteria (in order of importance):
 1. **Primary Performance**: Task-relevant metrics (accuracy/F1 for classification, RMSE/MAE for regression)
-2. **Cross-Validation Stability**: Consistent performance across CV folds
+2. **Holdout Stability**: Consistent performance on the single validation set
 3. **Execution Reliability**: Low error rate, successful completion
 4. **Model Complexity**: Simpler models preferred when performance is similar
 5. **Interpretability**: More interpretable models preferred for business applications

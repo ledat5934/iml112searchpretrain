@@ -6,3 +6,5 @@ from .assembler_prompt import AssemblerPrompt
 from .guideline_prompt import GuidelinePrompt
 from .comparison_prompt import ComparisonPrompt
 from .monolithic_coder_prompt import MonolithicCoderPrompt
+from .task_schema_prompt import TaskSchemaPrompt
+from .knowledge_retrieval_prompt import KnowledgeRetrievalPrompt

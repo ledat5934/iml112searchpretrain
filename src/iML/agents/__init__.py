@@ -10,6 +10,8 @@ from .assembler_agent import AssemblerAgent
 from .profiling_summarizer_agent import ProfilingSummarizerAgent
 from .model_retriever_agent import ModelRetrieverAgent
 from .architecture_retriever_agent import ArchitectureRetrieverAgent
+from .task_schema_agent import TaskSchemaAgent
+from .knowledge_retrieval_agent import KnowledgeRetrievalAgent
 from .comparison_agent import ComparisonAgent
 from .debug_agent import DebugAgent
 from .monolithic_coder_agent import MonolithicCoderAgent
@@ -25,6 +27,8 @@ __all__ = [
     "ProfilingSummarizerAgent",
     "ModelRetrieverAgent",
     "ArchitectureRetrieverAgent",
+    "TaskSchemaAgent",
+    "KnowledgeRetrievalAgent",
     "ComparisonAgent",
     "DebugAgent",
     "MonolithicCoderAgent",

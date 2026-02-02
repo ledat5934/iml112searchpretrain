@@ -46,6 +46,7 @@ IMPORTANT: DO NOT CREATE DUMMY DATA.
 12. Sample submission file given is for template reference (Columns) only. You have to use the test data or test file to generate predictions and your right submission file. In some cases, you must browse the test image folder to get the IDs and data.
 13. The provided file paths are the only valid paths to load the data. Do not create any dummy data files.
 14. **REPRODUCIBILITY**: Always use random_state=42 for ALL random operations (train_test_split, random sampling, etc.)
+15. **SPLIT STRATEGY**: Use a single train/validation split only. DO NOT use k-fold or cross-validation.
 
 ## CODE STRUCTURE:
 ```python

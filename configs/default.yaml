@@ -38,6 +38,12 @@ description_analyzer:
 profiling_summarizer:
   <<: *default_llm
 
+task_schema_agent:
+  <<: *default_llm
+
+knowledge_retriever:
+  <<: *default_llm
+
 guideline_generator:
   <<: *default_llm
 

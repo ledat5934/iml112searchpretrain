@@ -54,7 +54,7 @@ The following preprocessing code, including a function `preprocess_data(file_pat
 12. Sample submission file given is for template reference (Columns) only. You have to use the test data or test file to generate predictions and your right submission file. In some cases, you must browse the test image folder to get the IDs and data.
 13. **REPRODUCIBILITY & VALIDATION**: 
     - Always use random_state=42 for ALL random operations (model initialization, etc.)
-    - Use the validation set for model evaluation (no cross-validation needed)
+    - Use a single validation set for evaluation (NO k-fold or cross-validation)
     - Print the validation score in the format: "Validation Score: <score_value>"
     - Use the evaluation metrics specified in the modeling guidelines
 14. Pay attention to the create_submission guideline in the modeling guidelines to create valid submission, for example, if the guideline says that '1_2_1' for image 1, row 2, column 1, the index of row and column should begin with 1, not 0.
@@ -181,6 +181,7 @@ For Pretrained Models (prioritize PyTorch):
 - Use PyTorch-specific optimizers and schedulers
 - Implement gradual unfreezing strategy if needed
 - Prefer torch.nn.functional and PyTorch ecosystem
+- IMPORTANT: You should set ignore_mismatched_sizes=True
 - You should use large number of epochs(15, 20, ...) with early stopping = 3
 """
         else:

@@ -19,6 +19,8 @@ from ..agents import (
     ProfilingSummarizerAgent,
     ModelRetrieverAgent,
     ArchitectureRetrieverAgent,
+    TaskSchemaAgent,
+    KnowledgeRetrievalAgent,
     GuidelineAgent,
     PreprocessingCoderAgent,
     ModelingCoderAgent,
@@ -125,6 +127,18 @@ class Manager:
             config=config,
             manager=self,
         )
+        task_schema_llm_config = getattr(self.config, "task_schema_agent", None) or self.config.guideline_generator
+        self.task_schema_agent = TaskSchemaAgent(
+            config=config,
+            manager=self,
+            llm_config=task_schema_llm_config,
+        )
+        knowledge_llm_config = getattr(self.config, "knowledge_retriever", None) or self.config.guideline_generator
+        self.knowledge_retrieval_agent = KnowledgeRetrievalAgent(
+            config=config,
+            manager=self,
+            llm_config=knowledge_llm_config,
+        )
         self.guideline_agent = GuidelineAgent(
             config=config,
             manager=self,
@@ -170,6 +184,9 @@ class Manager:
             "output_folder": output_folder,
             
         }
+        self.task_schema = None
+        self.task_context = None
+        self.knowledge_packs = {}
 
     # ------------------------------------------------------------------
     # Ablation helpers
@@ -349,6 +366,8 @@ class Manager:
                     logger.warning("No valid SOTA candidates found. Falling back to single guideline generation (LLM will choose model).")
                     # Continue with standard flow (non-candidate loop) - skip to line 339
                 else:
+                    # Build iteration-specific knowledge pack before candidate loop
+                    self._prepare_iteration_knowledge(iteration_type)
                     # Candidate-wise loop: for each SOTA model, run guideline -> preprocessing -> modeling -> assembly
                     any_success = False
                     parent_iter_dir = Path(self.output_folder)
@@ -437,6 +456,9 @@ class Manager:
                 # Ensure other iterations are not influenced by retrieval results
                 if hasattr(self, "model_suggestions"):
                     delattr(self, "model_suggestions")
+
+            # Step 1c: Build iteration-specific knowledge pack (non-pretrained or no candidates)
+            self._prepare_iteration_knowledge(iteration_type)
 
             # Step 1b: Run guideline agent
             if timeout_occurred.is_set():
@@ -531,6 +553,9 @@ class Manager:
             return False
         self.profiling_summary = profiling_summary
 
+        # Step 3b: Task schema inference
+        self._prepare_task_schema()
+
         # Step 3b: Retrieve pretrained model suggestions
         model_suggestions = self.model_retriever_agent()
         self.model_suggestions = model_suggestions
@@ -603,6 +628,25 @@ class Manager:
             with open(model_file, 'r', encoding='utf-8') as f:
                 self.model_suggestions = json.load(f)
             logger.info("Loaded model suggestions from checkpoint")
+
+        # Load task schema and task context if available
+        task_schema_file = os.path.join(states_dir, "task_schema.json")
+        if os.path.exists(task_schema_file):
+            try:
+                with open(task_schema_file, 'r', encoding='utf-8') as f:
+                    self.task_schema = json.load(f)
+                logger.info("Loaded task schema from checkpoint")
+            except Exception as e:
+                logger.warning(f"Failed to load task schema: {e}")
+
+        task_context_file = os.path.join(states_dir, "task_context.json")
+        if os.path.exists(task_context_file):
+            try:
+                with open(task_context_file, 'r', encoding='utf-8') as f:
+                    self.task_context = json.load(f)
+                logger.info("Loaded task context from checkpoint")
+            except Exception as e:
+                logger.warning(f"Failed to load task context: {e}")
         
         # Load guideline (might be manually edited)
         guideline_file = os.path.join(states_dir, "guideline", "guideline_response.json")
@@ -657,6 +701,10 @@ class Manager:
                         logger.error(f"Profiling summarization failed: {profiling_summary['error']}")
                         return False
                     self.profiling_summary = profiling_summary
+
+                # Re-run task schema if needed
+                if not hasattr(self, 'task_context') or not self.task_context:
+                    self._prepare_task_schema()
                 
                 # Re-run model retrieval if needed
                 if not hasattr(self, 'model_suggestions'):
@@ -1070,9 +1118,53 @@ class Manager:
             return False
         self.profiling_summary = profiling_summary
 
+        # Step 3b: Task schema inference (LLM-based)
+        self._prepare_task_schema()
+
     # Note: Model retrieval will be run only within the pretrained iteration.
         
         return True
+
+    def _prepare_task_schema(self) -> bool:
+        """Infer task schema and build task_context for downstream phases."""
+        try:
+            task_schema = self.task_schema_agent()
+            if task_schema and "error" not in task_schema:
+                self.task_schema = task_schema
+                self.task_context = {
+                    "description_analysis": getattr(self, "description_analysis", {}) or {},
+                    "task_schema": task_schema,
+                    "profiling_summary": getattr(self, "profiling_summary", {}) or {},
+                }
+                try:
+                    self.save_and_log_states(
+                        json.dumps(self.task_context, indent=2, ensure_ascii=False),
+                        "task_context.json",
+                    )
+                except Exception:
+                    pass
+                return True
+            logger.warning("TaskSchemaAgent returned an error or empty schema; continuing without task_context.")
+        except Exception as e:
+            logger.warning(f"TaskSchemaAgent failed: {e}")
+        return False
+
+    def _prepare_iteration_knowledge(self, iteration_type: str) -> None:
+        """Build iteration-specific knowledge pack (no code) for downstream prompts."""
+        model_suggestions = getattr(self, "model_suggestions", None) if iteration_type == "pretrained" else None
+        architecture_suggestions = getattr(self, "architecture_suggestions", None) if iteration_type == "custom_nn_search" else None
+        try:
+            knowledge_pack = self.knowledge_retrieval_agent(
+                iteration_type=iteration_type,
+                model_suggestions=model_suggestions,
+                architecture_suggestions=architecture_suggestions,
+            )
+            if knowledge_pack and "error" not in knowledge_pack:
+                self.knowledge_packs[iteration_type or "default"] = knowledge_pack
+            else:
+                logger.warning("KnowledgeRetrievalAgent returned empty/errored pack; continuing without it.")
+        except Exception as e:
+            logger.warning(f"KnowledgeRetrievalAgent failed: {e}")
     
     def _run_iteration_pipeline(self, iteration_type):
         """Run the pipeline for a specific iteration type."""
@@ -1111,6 +1203,8 @@ class Manager:
                 logger.warning("No valid SOTA candidates found. Falling back to single guideline generation (LLM will choose model).")
                 # Continue with standard flow (non-candidate loop) - skip to line 1039
             else:
+                # Build iteration-specific knowledge pack before candidate loop
+                self._prepare_iteration_knowledge(iteration_type)
                 # Candidate-wise loop: for each SOTA model, run guideline -> preprocessing -> modeling -> assembly
                 any_success = False
                 parent_iter_dir = Path(self.output_folder)
@@ -1187,6 +1281,9 @@ class Manager:
             if hasattr(self, "model_suggestions"):
                 delattr(self, "model_suggestions")
 
+        # Step 1c: Build iteration-specific knowledge pack (non-pretrained or no candidates)
+        self._prepare_iteration_knowledge(iteration_type)
+
         # Step 1b: Run guideline agent with iteration-specific algorithm constraint
         if not self._prepare_guideline(iteration_type=iteration_type):
             return False
@@ -1254,9 +1351,15 @@ class Manager:
             return
         self.profiling_summary = profiling_summary
 
+        # 3b: Task schema inference
+        self._prepare_task_schema()
+
         # 3b: Retrieve pretrained model/embedding suggestions
         model_suggestions = self.model_retriever_agent()
         self.model_suggestions = model_suggestions
+
+        # 3c: Build knowledge pack for default iteration
+        self._prepare_iteration_knowledge("default")
 
         # 3c: Run guideline agent with summarized profiling + model suggestions
         if not self._prepare_guideline():

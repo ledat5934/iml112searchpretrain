@@ -55,11 +55,18 @@ class GuidelineAgent(BaseAgent):
 
         # Build prompt with model suggestions if available
         model_suggestions = getattr(self.manager, "model_suggestions", None)
+        task_context = getattr(self.manager, "task_context", None)
+        knowledge_pack = None
+        knowledge_key = iteration_type or "default"
+        if hasattr(self.manager, "knowledge_packs"):
+            knowledge_pack = self.manager.knowledge_packs.get(knowledge_key)
         prompt = self.prompt_handler.build(
             description_analysis=description_analysis,
             profiling_result=profiling_result,
             model_suggestions=model_suggestions,
             iteration_type=iteration_type,
+            task_context=task_context,
+            knowledge_pack=knowledge_pack,
         )
 
         # Call LLM

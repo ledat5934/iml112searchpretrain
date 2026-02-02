@@ -41,11 +41,15 @@ class GuidelinePrompt(BasePrompt):
 {variables_summary_str}
 ```
 
+{task_context_section}
+
+{knowledge_section}
+
 {id_format_section}
 
 ## IMPORTANT CONSTRAINTS:
-- ALWAYS use random_state=42 for ALL random operations (train_test_split, cross_validation, model initialization)
-- Use simple random split strategy for train/test splitting
+- ALWAYS use random_state=42 for ALL random operations (train_test_split, model initialization)
+- Use a single holdout split for train/validation (NO k-fold or cross-validation)
 - Ensure that your plan is up-to-date with current state-of-the-art knowledge.
 - Ensure that your plan is designed for AI agents coders instead of human engineers.
 - Ensure that your plan is self-contained with sufficient instructions to be executed by the AI agents. 
@@ -121,7 +125,15 @@ IMPORTANT: Ensure the generated JSON is perfectly valid.
     ]
 }}"""
 
-    def build(self, description_analysis: Dict[str, Any], profiling_result: Dict[str, Any], model_suggestions: Dict[str, Any] | None = None, iteration_type: str | None = None) -> str:
+    def build(
+        self,
+        description_analysis: Dict[str, Any],
+        profiling_result: Dict[str, Any],
+        model_suggestions: Dict[str, Any] | None = None,
+        iteration_type: str | None = None,
+        task_context: Dict[str, Any] | None = None,
+        knowledge_pack: Dict[str, Any] | None = None,
+    ) -> str:
         """Build prompt from analysis and profiling results.
 
         Supports two formats:
@@ -258,6 +270,24 @@ IMPORTANT: Ensure the generated JSON is perfectly valid.
                       "The architecture structure should guide your design, but you have flexibility to optimize it for this problem."
                 )
 
+        task_context_section = ""
+        if task_context:
+            task_context_section = (
+                "## TASK CONTEXT (DESCRIPTION + SCHEMA)\n"
+                + "```json\n"
+                + json.dumps(task_context, indent=2, ensure_ascii=False)
+                + "\n```\n"
+            )
+
+        knowledge_section = ""
+        if knowledge_pack:
+            knowledge_section = (
+                "## ITERATION-SPECIFIC KNOWLEDGE PACK (NO EXAMPLE CODE)\n"
+                + "```json\n"
+                + json.dumps(knowledge_pack, indent=2, ensure_ascii=False)
+                + "\n```\n"
+            )
+
         prompt = self.template.format(
             dataset_name=dataset_name,
             task_desc=task_desc,
@@ -269,7 +299,9 @@ IMPORTANT: Ensure the generated JSON is perfectly valid.
             submission_file_description=submission_file_description,
             model_suggestions_str=model_suggestions_str,
             algorithm_constraint=algorithm_constraint,
-            id_format_section=id_format_section + sota_section + architecture_section
+            id_format_section=id_format_section + sota_section + architecture_section,
+            task_context_section=task_context_section,
+            knowledge_section=knowledge_section,
         )
 
         self.manager.save_and_log_states(prompt, "guideline/guideline_prompt.txt")
