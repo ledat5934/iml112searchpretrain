@@ -61,6 +61,7 @@ The following preprocessing code, including a function `preprocess_data(file_pat
     - Use the evaluation metrics specified in the modeling guidelines
 14. Pay attention to the create_submission guideline in the modeling guidelines to create valid submission, for example, if the guideline says that '1_2_1' for image 1, row 2, column 1, the index of row and column should begin with 1, not 0.
 15. **PRETRAINED INPUT CONTRACT**: If model_selection corresponds to Ultralytics YOLO/RT-DETR, you MUST use a data.yaml path instead of passing DataLoader directly.
+16. **INPUT CONTRACT OVERRIDE**: If input contract notes mention `data.yaml` or Ultralytics/YOLO/RT-DETR, you MUST use a data.yaml path (even if DataLoader is available).
 """
 
     def build(

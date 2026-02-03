@@ -52,6 +52,7 @@ IMPORTANT: DO NOT CREATE DUMMY DATA.
 13. The provided file paths are the only valid paths to load the data. Do not create any dummy data files.
 14. **REPRODUCIBILITY**: Always use random_state=42 for ALL random operations (train_test_split, random sampling, etc.)
 15. **SPLIT STRATEGY**: Use a single train/validation split only. DO NOT use k-fold or cross-validation.
+16. **INPUT CONTRACT OVERRIDE**: If the input contract notes mention `data.yaml` or Ultralytics/YOLO/RT-DETR, you MUST generate `data.yaml` and return its path (DataLoader is optional and secondary).
 
 ## CODE STRUCTURE:
 ```python
