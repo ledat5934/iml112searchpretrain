@@ -25,6 +25,9 @@ IMPORTANT: DO NOT CREATE DUMMY DATA.
 - Data files: {data_file_desc}
 - File paths: {file_paths} (LOAD DATA FROM THESE PATHS)
 
+## DATAFILE STRUCTURE (SUMMARY)
+{datafile_structure}
+
 ## PREPROCESSING GUIDELINES:
 {preprocessing_guideline}
 
@@ -100,6 +103,7 @@ if __name__ == "__main__":
         error_message: str = None,
         iteration_type: str = None,
         input_contract_notes: list[str] | None = None,
+        datafile_structure: str | None = None,
     ) -> str:
         """Build prompt to generate preprocessing code."""
 
@@ -139,6 +143,7 @@ if __name__ == "__main__":
             batch_processing_instruction=batch_instruction,
             data_return_format=data_format,
             input_contract_notes_section=input_contract_notes_section,
+            datafile_structure=datafile_structure or "N/A",
         )
 
         if previous_code and error_message:

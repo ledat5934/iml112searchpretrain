@@ -5,6 +5,7 @@ from typing import Dict, Any
 from .base_agent import BaseAgent
 from ..prompts.guideline_prompt import GuidelinePrompt
 from .utils import init_llm
+from ..utils.file_io import get_directory_structure
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +57,7 @@ class GuidelineAgent(BaseAgent):
         # Build prompt with model suggestions if available
         model_suggestions = getattr(self.manager, "model_suggestions", None)
         task_context = getattr(self.manager, "task_context", None)
+        datafile_structure = get_directory_structure(self.manager.input_data_folder)
         knowledge_pack = None
         knowledge_key = iteration_type or "default"
         if hasattr(self.manager, "knowledge_packs"):
@@ -67,6 +69,7 @@ class GuidelineAgent(BaseAgent):
             iteration_type=iteration_type,
             task_context=task_context,
             knowledge_pack=knowledge_pack,
+            datafile_structure=datafile_structure,
         )
 
         # Call LLM

@@ -41,6 +41,9 @@ class GuidelinePrompt(BasePrompt):
 {variables_summary_str}
 ```
 
+## DATAFILE STRUCTURE (SUMMARY)
+{datafile_structure}
+
 {task_context_section}
 
 {knowledge_section}
@@ -133,6 +136,7 @@ IMPORTANT: Ensure the generated JSON is perfectly valid.
         iteration_type: str | None = None,
         task_context: Dict[str, Any] | None = None,
         knowledge_pack: Dict[str, Any] | None = None,
+        datafile_structure: str | None = None,
     ) -> str:
         """Build prompt from analysis and profiling results.
 
@@ -288,6 +292,8 @@ IMPORTANT: Ensure the generated JSON is perfectly valid.
                 + "\n```\n"
             )
 
+        datafile_structure = datafile_structure or profiling_result.get("directory_structure_summary") or "N/A"
+
         prompt = self.template.format(
             dataset_name=dataset_name,
             task_desc=task_desc,
@@ -302,6 +308,7 @@ IMPORTANT: Ensure the generated JSON is perfectly valid.
             id_format_section=id_format_section + sota_section + architecture_section,
             task_context_section=task_context_section,
             knowledge_section=knowledge_section,
+            datafile_structure=datafile_structure,
         )
 
         self.manager.save_and_log_states(prompt, "guideline/guideline_prompt.txt")
