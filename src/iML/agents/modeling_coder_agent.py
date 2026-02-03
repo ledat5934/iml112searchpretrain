@@ -35,6 +35,11 @@ class ModelingCoderAgent(BaseAgent):
         guideline = self.manager.guideline
         description = self.manager.description_analysis
         preprocessing_code = self.manager.preprocessing_code
+        knowledge_key = iteration_type or "default"
+        knowledge_pack = {}
+        if hasattr(self.manager, "knowledge_packs"):
+            knowledge_pack = self.manager.knowledge_packs.get(knowledge_key, {}) or {}
+        input_contract_notes = knowledge_pack.get("input_contract_notes") or []
         
         if not preprocessing_code:
             logger.error("Preprocessing code not found. Cannot continue.")
@@ -46,6 +51,7 @@ class ModelingCoderAgent(BaseAgent):
             description=description,
             preprocessing_code=preprocessing_code,
             iteration_type=iteration_type,
+            input_contract_notes=input_contract_notes,
         )
         
         # Save prompt for modeling

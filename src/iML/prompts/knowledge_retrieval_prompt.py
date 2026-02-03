@@ -46,6 +46,9 @@ Return a SINGLE JSON object with the following fields (add more if needed, but k
     "split_strategy": "...",
     "notes": "..."
   }},
+  "input_contract_notes": [
+    "..."
+  ],
   "submission_notes": [
     "..."
   ],

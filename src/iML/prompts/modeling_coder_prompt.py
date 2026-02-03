@@ -28,6 +28,8 @@ This script will be combined with the provided preprocessing code.
 ## MODELING GUIDELINES:
 {modeling_guideline}
 
+{input_contract_notes_section}
+
 
 ## PREPROCESSING CODE (Do NOT include this in your response):
 The following preprocessing code, including a function `preprocess_data(file_paths: dict)`, will be available in the execution environment. You must call it to get the data.
@@ -58,9 +60,19 @@ The following preprocessing code, including a function `preprocess_data(file_pat
     - Print the validation score in the format: "Validation Score: <score_value>"
     - Use the evaluation metrics specified in the modeling guidelines
 14. Pay attention to the create_submission guideline in the modeling guidelines to create valid submission, for example, if the guideline says that '1_2_1' for image 1, row 2, column 1, the index of row and column should begin with 1, not 0.
+15. **PRETRAINED INPUT CONTRACT**: If model_selection corresponds to Ultralytics YOLO/RT-DETR, you MUST use a data.yaml path instead of passing DataLoader directly.
 """
 
-    def build(self, guideline: Dict, description: Dict, preprocessing_code: str, previous_code: str = None, error_message: str = None, iteration_type: str = None) -> str:
+    def build(
+        self,
+        guideline: Dict,
+        description: Dict,
+        preprocessing_code: str,
+        previous_code: str = None,
+        error_message: str = None,
+        iteration_type: str = None,
+        input_contract_notes: list[str] | None = None,
+    ) -> str:
         """Build prompt to generate modeling code."""
         
         guideline = guideline or {}
@@ -75,6 +87,16 @@ The following preprocessing code, including a function `preprocess_data(file_pat
         # Get data handling instruction based on iteration type
         data_handling = self._get_data_handling_instruction(iteration_type)
 
+        input_contract_notes_section = ""
+        if input_contract_notes:
+            lines = "\n".join(f"- {note}" for note in input_contract_notes if note)
+            if lines:
+                input_contract_notes_section = (
+                    "## INPUT CONTRACT NOTES (from Knowledge Retrieval)\n"
+                    + lines
+                    + "\n"
+                )
+
         prompt = self.template.format(
             dataset_name=description.get('name', 'N/A'),
             task_desc=description.get('task', 'N/A'),
@@ -85,7 +107,8 @@ The following preprocessing code, including a function `preprocess_data(file_pat
             modeling_guideline=enhanced_guideline,
             preprocessing_code=preprocessing_code,
             data_handling_instruction=data_handling,
-            submission_file_description=description.get('submission file description', 'N/A')
+            submission_file_description=description.get('submission file description', 'N/A'),
+            input_contract_notes_section=input_contract_notes_section,
         )
 
         # Append full description analysis as JSON context

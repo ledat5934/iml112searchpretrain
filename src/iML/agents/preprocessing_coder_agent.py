@@ -35,6 +35,11 @@ class PreprocessingCoderAgent(BaseAgent):
 
         guideline = self.manager.guideline
         description = self.manager.description_analysis
+        knowledge_key = iteration_type or "default"
+        knowledge_pack = {}
+        if hasattr(self.manager, "knowledge_packs"):
+            knowledge_pack = self.manager.knowledge_packs.get(knowledge_key, {}) or {}
+        input_contract_notes = knowledge_pack.get("input_contract_notes") or []
         
         code_to_execute = None
         error_message = None
@@ -48,7 +53,8 @@ class PreprocessingCoderAgent(BaseAgent):
                 description=description,
                 previous_code=code_to_execute,
                 error_message=error_message,
-                iteration_type=iteration_type
+                iteration_type=iteration_type,
+                input_contract_notes=input_contract_notes,
             )
 
             # Save prompt under structured path

@@ -47,6 +47,7 @@ Return a SINGLE JSON object with the following fields (add more if needed, but k
     "type": "class_label|probabilities|boxes|masks|sequence|unknown",
     "notes": "..."
   }},
+  "preferred_input_contract": "data_yaml|dataloader|dataframe|files|unknown",
   "evaluation_spec": {{
     "metrics": ["..."],
     "validation_strategy": "random_split|time_split|group_split|rolling_origin|unknown",

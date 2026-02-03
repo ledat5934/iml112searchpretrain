@@ -28,6 +28,8 @@ IMPORTANT: DO NOT CREATE DUMMY DATA.
 ## PREPROCESSING GUIDELINES:
 {preprocessing_guideline}
 
+{input_contract_notes_section}
+
 ## TARGET INFO:
 {target_info}
 
@@ -90,7 +92,15 @@ if __name__ == "__main__":
 ````
 """
 
-    def build(self, guideline: Dict, description: Dict, previous_code: str = None, error_message: str = None, iteration_type: str = None) -> str:
+    def build(
+        self,
+        guideline: Dict,
+        description: Dict,
+        previous_code: str = None,
+        error_message: str = None,
+        iteration_type: str = None,
+        input_contract_notes: list[str] | None = None,
+    ) -> str:
         """Build prompt to generate preprocessing code."""
 
         guideline = guideline or {}
@@ -106,6 +116,16 @@ if __name__ == "__main__":
         # Get batch processing instruction and data return format based on iteration
         batch_instruction, data_format = self._get_batch_processing_config(iteration_type)
 
+        input_contract_notes_section = ""
+        if input_contract_notes:
+            lines = "\n".join(f"- {note}" for note in input_contract_notes if note)
+            if lines:
+                input_contract_notes_section = (
+                    "## INPUT CONTRACT NOTES (from Knowledge Retrieval)\n"
+                    + lines
+                    + "\n"
+                )
+
         prompt = self.template.format(
             dataset_name=description.get('name', 'N/A'),
             task_desc=description.get('task', 'N/A'),
@@ -118,6 +138,7 @@ if __name__ == "__main__":
             target_info=json.dumps(target_info, indent=2),
             batch_processing_instruction=batch_instruction,
             data_return_format=data_format,
+            input_contract_notes_section=input_contract_notes_section,
         )
 
         if previous_code and error_message:
@@ -232,8 +253,17 @@ For Pretrained Models (preferably PyTorch-based):
             batch_instruction = "IMPORTANT: Preprocess data by batch using generators to reduce memory usage for neural network training."
             data_format = "5. Create a function `preprocess_data()` that takes a dictionary of file paths and returns a tuple of **generators**, one for each data split (e.g., train_generator, val_generator, test_generator)."
         elif iteration_type == "pretrained":
-            batch_instruction = "IMPORTANT: For pretrained models, return PyTorch DataLoader objects with FINITE datasets. Use torch.utils.data.TensorDataset or custom Dataset (NOT IterableDataset). Each DataLoader must have a defined length."
-            data_format = "5. Create a function `preprocess_data()` that takes a dictionary of file paths and returns a tuple of **PyTorch DataLoader objects** with FINITE length, one for each data split (e.g., train_loader, val_loader, test_loader). CRITICAL: Use torch.utils.data.Dataset (with __len__), NOT IterableDataset."
+            batch_instruction = (
+                "IMPORTANT: Return the most appropriate input artifacts for the chosen pretrained model. "
+                "If the model requires a dataset config (e.g., Ultralytics YOLO), generate data.yaml and return its path. "
+                "If the model uses PyTorch/HF, return Dataset/DataLoader. If unclear, return both data.yaml and DataLoader when feasible."
+            )
+            data_format = (
+                "5. Create a function `preprocess_data()` that takes a dictionary of file paths and returns the most appropriate "
+                "input artifacts for the chosen pretrained model. If the model requires a dataset config (e.g., Ultralytics YOLO), "
+                "generate data.yaml and return its path. If the model uses PyTorch/HF, return Dataset/DataLoader. "
+                "If unclear, return both data.yaml and DataLoader when feasible."
+            )
         else:
             # Default behavior
             batch_instruction = "IMPORTANT: Preprocess data by batch using generators to reduce memory usage."
