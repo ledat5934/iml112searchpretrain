@@ -103,7 +103,12 @@ class PreprocessingCoderAgent(BaseAgent):
                     continue
 
                 filename = "code_generated"  # consistent with manager.execute_code script name
-                task_desc = (self.manager.description_analysis or {}).get('task_description') or json.dumps(self.manager.description_analysis)
+                task_desc = self.manager.build_debug_context(
+                    stderr=error_message,
+                    code=code_to_execute,
+                    phase_name="preprocessing",
+                    attempt=attempt + 1,
+                )
                 ok, patched, meta = self.manager.debug_agent.llm_debug_fix(
                     code=code_to_execute,
                     stderr=error_message,

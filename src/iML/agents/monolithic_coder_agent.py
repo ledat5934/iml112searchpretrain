@@ -70,7 +70,12 @@ class MonolithicCoderAgent(BaseAgent):
 
             if self.manager.is_debug_enabled():
                 filename = "monolithic_script"
-                task_desc = (description or {}).get("task_description") or json.dumps(description)
+                task_desc = self.manager.build_debug_context(
+                    stderr=error_message or "",
+                    code=code_to_execute,
+                    phase_name="monolithic",
+                    attempt=attempt,
+                )
                 ok, patched, _ = self.manager.debug_agent.llm_debug_fix(
                     code=code_to_execute,
                     stderr=error_message or "",

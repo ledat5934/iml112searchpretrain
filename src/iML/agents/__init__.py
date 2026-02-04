@@ -12,6 +12,8 @@ from .model_retriever_agent import ModelRetrieverAgent
 from .architecture_retriever_agent import ArchitectureRetrieverAgent
 from .task_schema_agent import TaskSchemaAgent
 from .knowledge_retrieval_agent import KnowledgeRetrievalAgent
+from .error_triage_agent import ErrorTriageAgent
+from .evidence_gathering_agent import EvidenceGatheringAgent
 from .comparison_agent import ComparisonAgent
 from .debug_agent import DebugAgent
 from .monolithic_coder_agent import MonolithicCoderAgent
@@ -29,6 +31,8 @@ __all__ = [
     "ArchitectureRetrieverAgent",
     "TaskSchemaAgent",
     "KnowledgeRetrievalAgent",
+    "ErrorTriageAgent",
+    "EvidenceGatheringAgent",
     "ComparisonAgent",
     "DebugAgent",
     "MonolithicCoderAgent",

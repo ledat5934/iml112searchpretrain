@@ -116,7 +116,12 @@ class AssemblerAgent(BaseAgent):
                         continue
 
                     filename = "code_generated"
-                    task_desc = (self.manager.description_analysis or {}).get('task_description') or json.dumps(self.manager.description_analysis)
+                    task_desc = self.manager.build_debug_context(
+                        stderr=error_message,
+                        code=final_code,
+                        phase_name="assemble",
+                        attempt=attempt + 1,
+                    )
                     ok, patched, meta = self.manager.debug_agent.llm_debug_fix(
                         code=final_code,
                         stderr=error_message,
@@ -156,7 +161,12 @@ class AssemblerAgent(BaseAgent):
                     continue
 
                 filename = "code_generated"
-                task_desc = (self.manager.description_analysis or {}).get('task_description') or json.dumps(self.manager.description_analysis)
+                task_desc = self.manager.build_debug_context(
+                    stderr=error_message,
+                    code=final_code,
+                    phase_name="assemble",
+                    attempt=attempt + 1,
+                )
                 ok, patched, meta = self.manager.debug_agent.llm_debug_fix(
                     code=final_code,
                     stderr=error_message,
