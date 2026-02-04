@@ -129,41 +129,42 @@ class ModelRetrieverAgent(BaseAgent):
             logger.error(f"SOTA search failed and is required to proceed: {e}")
             return []
 
-    def _validate_huggingface_model(self, model_link: str) -> bool:
-        """
-        Soft-validate HuggingFace model link existence.
-
-        Policy:
-        - If model_link is missing or not a HuggingFace URL: SKIP validation (return True).
-        - If HuggingFace returns 404: reject (return False).
-        - For any other status (200/3xx/401/403/5xx) or network issues: do NOT reject (return True),
-          because Kaggle/network/gated-model conditions can produce false negatives.
-        """
-        if not model_link:
+    def _validate_huggingface_model(self, model_link: str, source_type: str | None = None) -> bool:
+        """Validate if a HuggingFace model exists by checking the model page."""
+        if source_type == "library":
             return True
-        if "huggingface.co" not in model_link:
-            # Not a HuggingFace URL (could be a library pretrained, local, or other hub).
-            return True
+        if not model_link or "huggingface.co" not in model_link:
+            logger.warning(f"Invalid HuggingFace link format: {model_link}")
+            return False
         
         try:
             import requests
             response = requests.head(model_link, timeout=10, allow_redirects=True)
             
-            if response.status_code == 404:
+            # Only 200 OK is considered valid
+            if response.status_code == 200:
+                logger.debug(f"Model verified (200 OK): {model_link}")
+                return True
+            elif response.status_code == 404:
                 logger.warning(f"Model not found (404): {model_link}")
                 return False
-            if response.status_code != 200:
-                # Soft-pass for non-404 statuses to avoid false negatives.
-                logger.warning(
-                    f"Model link validation returned status {response.status_code}; keeping candidate (soft validation): {model_link}"
-                )
-            return True
+            elif response.status_code == 401:
+                logger.warning(f"Model unauthorized/private (401): {model_link}")
+                return False  # Treat 401 as invalid - can't use private models
+            elif response.status_code == 403:
+                logger.warning(f"Model access forbidden (403): {model_link}")
+                return False
+            else:
+                # For other status codes (500, 502, etc.), still reject
+                logger.warning(f"Model validation failed (status {response.status_code}): {model_link}")
+                return False
         except requests.exceptions.Timeout:
-            logger.warning(f"Timeout validating model (>10s); keeping candidate (soft validation): {model_link}")
-            return True
+            logger.warning(f"Timeout validating model (>10s): {model_link}")
+            return False
         except Exception as e:
-            logger.warning(f"Error validating model; keeping candidate (soft validation): {model_link} err={e}")
-            return True
+            logger.warning(f"Error validating model {model_link}: {e}")
+            # Network errors - reject to be safe
+            return False
 
     def __call__(self) -> Dict[str, Any]:
         self.manager.log_agent_start("ModelRetrieverAgent: retrieving pretrained SOTA models via ADK...")
@@ -182,7 +183,7 @@ class ModelRetrieverAgent(BaseAgent):
 
         # Filter models to allowed keys only AND validate HuggingFace models
         # Keep only the first max_results valid models (they come ranked from ADK)
-        allowed_keys = {"model_name", "example_code", "model_link"}
+        allowed_keys = {"model_name", "example_code", "model_link", "source_type"}
         cleaned_models: List[Dict[str, Any]] = []
         
         for idx, m in enumerate(sota_models or [], start=1):
@@ -197,13 +198,17 @@ class ModelRetrieverAgent(BaseAgent):
                 cleaned = {}
                 
             if cleaned:
-                model_name = cleaned.get('model_name', 'unknown')
+                model_name = cleaned.get("model_name", "unknown")
                 model_link = cleaned.get("model_link", "")
-                
-                logger.info(f"Validating candidate #{idx}: {model_name}...")
+                source_type = cleaned.get("source_type")
+                if not source_type:
+                    source_type = "huggingface" if "huggingface.co" in (model_link or "") else "library"
+                    cleaned["source_type"] = source_type
+
+                logger.info(f"Validating candidate #{idx}: {model_name} (source={source_type})...")
                 
                 # Validate HuggingFace model exists before adding
-                if self._validate_huggingface_model(model_link):
+                if self._validate_huggingface_model(model_link, source_type=source_type):
                     cleaned_models.append(cleaned)
                     logger.info(f"✓ Valid model #{len(cleaned_models)}: {model_name}")
                 else:
