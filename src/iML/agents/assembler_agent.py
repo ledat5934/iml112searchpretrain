@@ -58,12 +58,14 @@ class AssemblerAgent(BaseAgent):
             # 1. Assemble/Fix code
             # On first attempt, error_message is None, LLM will just assemble.
             # In subsequent attempts, LLM will fix errors.
+            decorator_chain = getattr(self.manager, "decorator_chain", None)
             prompt = self.prompt_handler.build(
                 original_code=combined_code,
                 output_path=submission_path,
                 description=description,
                 error_message=error_message,
-                iteration_type=iteration_type
+                iteration_type=iteration_type,
+                decorator_chain=decorator_chain,
             )
 
             # Save prompt under structured path

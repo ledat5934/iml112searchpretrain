@@ -38,6 +38,7 @@ class MonolithicCoderAgent(BaseAgent):
 
         for attempt in range(1, self.max_retries + 1):
             logger.info(f"[MonolithicCoder] Attempt {attempt}/{self.max_retries}")
+            decorator_chain = getattr(self.manager, "decorator_chain", None)
             prompt = self.prompt_handler.build(
                 guideline=guideline,
                 description=description,
@@ -45,6 +46,7 @@ class MonolithicCoderAgent(BaseAgent):
                 previous_code=code_to_execute,
                 error_message=error_message,
                 iteration_type=iteration_type,
+                decorator_chain=decorator_chain,
             )
             self.manager.save_and_log_states(prompt, f"monolithic/attempt_{attempt}/prompt.txt")
 

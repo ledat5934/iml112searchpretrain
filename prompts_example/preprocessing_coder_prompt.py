@@ -107,28 +107,22 @@ if __name__ == "__main__":
         datafile_structure: str | None = None,
         decorator_chain=None,
     ) -> str:
-        """Build prompt to generate preprocessing code."""
-
         guideline = guideline or {}
         preprocessing_guideline = guideline.get('preprocessing', {})
         target_info = guideline.get("target_identification", {})
 
-        # Add iteration-specific preprocessing guidance
         iteration_guidance = self._get_iteration_guidance(iteration_type)
         enhanced_guideline = json.dumps(preprocessing_guideline, indent=2)
         if iteration_guidance:
             enhanced_guideline += f"\n\n## ITERATION-SPECIFIC GUIDANCE:\n{iteration_guidance}"
 
-        # Append domain/task preprocessing sections from decorator chain
         dc = decorator_chain or self.decorator_chain
         if dc and not dc.is_empty():
             decorator_preprocessing = dc.get_combined_section("preprocessing")
             if decorator_preprocessing:
                 enhanced_guideline += f"\n\n{decorator_preprocessing}"
 
-        # Get batch processing instruction and data return format based on iteration
         batch_instruction, data_format = self._get_batch_processing_config(iteration_type)
-        # Override with decorator batch config if available
         if dc and not dc.is_empty():
             dc_bi, dc_df = dc.get_merged_batch_config()
             if dc_bi:

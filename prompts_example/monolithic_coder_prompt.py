@@ -67,7 +67,6 @@ Return ONLY the final Python script (no explanations, no markdown).
 
         iteration_notes = self._build_iteration_notes(iteration_type, modeling_section)
 
-        # Append domain/task sections from decorator chain
         dc = decorator_chain or self.decorator_chain
         if dc and not dc.is_empty():
             dc_pre = dc.get_combined_section("preprocessing")

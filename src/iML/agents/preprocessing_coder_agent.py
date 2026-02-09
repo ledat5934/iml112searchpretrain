@@ -50,6 +50,7 @@ class PreprocessingCoderAgent(BaseAgent):
             logger.info(f"Code generation attempt {attempt + 1}/{self.max_retries}...")
 
             # 1. Generate code
+            decorator_chain = getattr(self.manager, "decorator_chain", None)
             prompt = self.prompt_handler.build(
                 guideline=guideline,
                 description=description,
@@ -58,6 +59,7 @@ class PreprocessingCoderAgent(BaseAgent):
                 iteration_type=iteration_type,
                 input_contract_notes=input_contract_notes,
                 datafile_structure=datafile_structure,
+                decorator_chain=decorator_chain,
             )
 
             # Save prompt under structured path

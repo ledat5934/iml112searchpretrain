@@ -62,6 +62,7 @@ class GuidelineAgent(BaseAgent):
         knowledge_key = iteration_type or "default"
         if hasattr(self.manager, "knowledge_packs"):
             knowledge_pack = self.manager.knowledge_packs.get(knowledge_key)
+        decorator_chain = getattr(self.manager, "decorator_chain", None)
         prompt = self.prompt_handler.build(
             description_analysis=description_analysis,
             profiling_result=profiling_result,
@@ -70,6 +71,7 @@ class GuidelineAgent(BaseAgent):
             task_context=task_context,
             knowledge_pack=knowledge_pack,
             datafile_structure=datafile_structure,
+            decorator_chain=decorator_chain,
         )
 
         # Call LLM

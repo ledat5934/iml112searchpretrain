@@ -34,6 +34,7 @@ from ..agents import (
 from ..agents.comparison_agent import IterationResultExtractor
 from ..llm import ChatLLMFactory
 from ..utils.file_io import get_directory_structure
+from ..prompts.decorators import DecoratorResolver
 
 # Basic configuration
 logging.basicConfig(level=logging.INFO)
@@ -202,6 +203,7 @@ class Manager:
         self.task_schema = None
         self.task_context = None
         self.knowledge_packs = {}
+        self.decorator_chain = None
 
     # ------------------------------------------------------------------
     # Ablation helpers
@@ -651,6 +653,8 @@ class Manager:
                 with open(task_schema_file, 'r', encoding='utf-8') as f:
                     self.task_schema = json.load(f)
                 logger.info("Loaded task schema from checkpoint")
+                # Resolve decorator chain from loaded task schema
+                self._resolve_decorator_chain(self.task_schema)
             except Exception as e:
                 logger.warning(f"Failed to load task schema: {e}")
 
@@ -1158,11 +1162,34 @@ class Manager:
                     )
                 except Exception:
                     pass
+                # Resolve decorator chain from task schema
+                self._resolve_decorator_chain(task_schema)
                 return True
             logger.warning("TaskSchemaAgent returned an error or empty schema; continuing without task_context.")
         except Exception as e:
             logger.warning(f"TaskSchemaAgent failed: {e}")
         return False
+
+    def _resolve_decorator_chain(self, task_schema: Dict[str, Any]) -> None:
+        """Resolve domain/task decorator chain from task schema and description analysis."""
+        try:
+            description_analysis = getattr(self, "description_analysis", {}) or {}
+            resolver = DecoratorResolver()
+            self.decorator_chain = resolver.resolve_from_task_schema(
+                task_schema=task_schema,
+                description_analysis=description_analysis,
+            )
+            if self.decorator_chain and not self.decorator_chain.is_empty():
+                logger.info(f"Decorator chain resolved: {self.decorator_chain.summary()}")
+                self.save_and_log_states(
+                    self.decorator_chain.summary(),
+                    "decorator_chain_summary.txt",
+                )
+            else:
+                logger.info("No domain/task decorators resolved (decorator chain is empty).")
+        except Exception as e:
+            logger.warning(f"Failed to resolve decorator chain: {e}")
+            self.decorator_chain = None
 
     def _prepare_iteration_knowledge(self, iteration_type: str) -> None:
         """Build iteration-specific knowledge pack (no code) for downstream prompts."""

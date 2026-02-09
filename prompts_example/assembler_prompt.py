@@ -43,8 +43,6 @@ Based on the context above, generate the complete and corrected Python code. The
 """
 
     def build(self, original_code: str, output_path: str, description: Dict, error_message: str = None, iteration_type: str = None, decorator_chain=None) -> str:
-        """Build prompt to assemble or fix code."""
-
         retry_context = ""
         if error_message:
             # Use smart truncation for error message to save tokens and focus on relevant parts
@@ -96,7 +94,6 @@ The code above failed with the following error.
             description_json = json.dumps(description, indent=2)
         prompt += f"\n\n## FULL DESCRIPTION ANALYSIS (JSON)\n```json\n{description_json}\n```\n"
 
-        # Append domain/task assembly notes from decorator chain
         dc = decorator_chain or self.decorator_chain
         if dc and not dc.is_empty():
             assembler_section = dc.get_combined_section("assembler")

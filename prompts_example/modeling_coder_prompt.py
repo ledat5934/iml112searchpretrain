@@ -75,27 +75,21 @@ The following preprocessing code, including a function `preprocess_data(file_pat
         input_contract_notes: list[str] | None = None,
         decorator_chain=None,
     ) -> str:
-        """Build prompt to generate modeling code."""
-        
         guideline = guideline or {}
         modeling_guideline = guideline.get('modeling', {})
-        
-        # Add iteration-specific modeling guidance
+
         iteration_guidance = self._get_iteration_guidance(iteration_type)
         enhanced_guideline = json.dumps(modeling_guideline, indent=2)
         if iteration_guidance:
             enhanced_guideline += f"\n\n## ITERATION-SPECIFIC GUIDANCE:\n{iteration_guidance}"
 
-        # Append domain/task modeling sections from decorator chain
         dc = decorator_chain or self.decorator_chain
         if dc and not dc.is_empty():
             decorator_modeling = dc.get_combined_section("modeling")
             if decorator_modeling:
                 enhanced_guideline += f"\n\n{decorator_modeling}"
 
-        # Get data handling instruction based on iteration type
         data_handling = self._get_data_handling_instruction(iteration_type)
-        # Append domain/task data handling from decorator chain
         if dc and not dc.is_empty():
             dc_dh = dc.get_merged_data_handling()
             if dc_dh:

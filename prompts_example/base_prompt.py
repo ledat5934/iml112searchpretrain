@@ -6,20 +6,8 @@ logger = logging.getLogger(__name__)
 
 
 class BasePrompt(ABC):
-    """Abstract base class for prompt handling"""
 
     def __init__(self, manager, llm_config, template=None, **kwargs):
-        """
-        Initialize prompt handler with configuration and optional template.
-
-        Args:
-            manager: The manager instance
-            llm_config: Configuration for the language model
-            template: Optional custom template. Can be:
-                     - None: use default template
-                     - A string path ending in .txt: load template from file
-                     - A string: use as template directly
-        """
         self.manager = manager
         self.llm_config = llm_config
         self.decorator_chain = None

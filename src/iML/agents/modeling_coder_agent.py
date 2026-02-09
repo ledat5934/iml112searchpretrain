@@ -46,12 +46,14 @@ class ModelingCoderAgent(BaseAgent):
             return {"status": "failed", "error": "Preprocessing code not available."}
 
         # 1. Generate modeling code
+        decorator_chain = getattr(self.manager, "decorator_chain", None)
         prompt = self.prompt_handler.build(
             guideline=guideline,
             description=description,
             preprocessing_code=preprocessing_code,
             iteration_type=iteration_type,
             input_contract_notes=input_contract_notes,
+            decorator_chain=decorator_chain,
         )
         
         # Save prompt for modeling

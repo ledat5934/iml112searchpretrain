@@ -139,12 +139,6 @@ IMPORTANT: Ensure the generated JSON is perfectly valid.
         datafile_structure: str | None = None,
         decorator_chain=None,
     ) -> str:
-        """Build prompt from analysis and profiling results.
-
-        Supports two formats:
-        - Summarized profiling (preferred): keys include 'files', 'label_analysis', 'feature_quality'.
-        - Raw profiling (fallback): keys include 'summaries', 'profiles'.
-        """
         task_info = description_analysis
 
         dataset_name = task_info.get('name', 'N/A')
@@ -228,6 +222,9 @@ IMPORTANT: Ensure the generated JSON is perfectly valid.
         sota_models = model_suggestions.get('sota_models', []) or []
         model_suggestions_str = json.dumps(model_suggestions, indent=2, ensure_ascii=False)
 
+        # Generate domain-specific data section from profiling summary
+        domain_stats_section = self._generate_domain_stats_section(profiling_result)
+
         # Generate ID format section
         id_format_section = self._generate_id_format_section(profiling_result)
 
@@ -306,13 +303,12 @@ IMPORTANT: Ensure the generated JSON is perfectly valid.
             submission_file_description=submission_file_description,
             model_suggestions_str=model_suggestions_str,
             algorithm_constraint=algorithm_constraint,
-            id_format_section=id_format_section + sota_section + architecture_section,
+            id_format_section=domain_stats_section + id_format_section + sota_section + architecture_section,
             task_context_section=task_context_section,
             knowledge_section=knowledge_section,
             datafile_structure=datafile_structure,
         )
 
-        # Apply decorator chain (domain/task-specific guidance)
         dc = decorator_chain or self.decorator_chain
         if dc and not dc.is_empty():
             prompt = dc.wrap_prompt(prompt, phase="guideline")
@@ -336,6 +332,138 @@ IMPORTANT: Ensure the generated JSON is perfectly valid.
         else:
             # Default for backward compatibility
             return "None"
+
+    def _generate_domain_stats_section(self, profiling_result: Dict[str, Any]) -> str:
+        """Generate domain-specific data profiling section for the prompt."""
+        domain_stats = profiling_result.get("domain_specific_stats")
+        if not domain_stats:
+            return ""
+
+        section_lines = ["## DOMAIN-SPECIFIC DATA PROFILING:"]
+
+        # Image data stats
+        img = domain_stats.get("image")
+        if img:
+            section_lines.append("### Image Data:")
+            section_lines.append(f"- Total files: {img.get('total_files', img.get('total_images', 'N/A'))}")
+            if img.get("avg_dimensions"):
+                section_lines.append(f"- Average dimensions: {img['avg_dimensions']}")
+            if img.get("uniform_dimensions") is not None:
+                section_lines.append(f"- Uniform dimensions: {'Yes' if img['uniform_dimensions'] else 'No (variable sizes - resizing required)'}")
+            if img.get("channels"):
+                section_lines.append(f"- Channels: {img['channels']}")
+            if img.get("formats"):
+                section_lines.append(f"- Formats: {', '.join(img['formats'])}")
+            if img.get("num_classes_from_folders"):
+                section_lines.append(f"- Classes detected from folder structure: {img['num_classes_from_folders']}")
+            if img.get("preprocessing_notes"):
+                section_lines.append(f"- **Preprocessing guidance**: {img['preprocessing_notes']}")
+
+        # Audio data stats
+        audio = domain_stats.get("audio")
+        if audio:
+            section_lines.append("### Audio Data:")
+            section_lines.append(f"- Total audio files: {audio.get('total_files', 'N/A')}")
+            if audio.get("duration_range"):
+                section_lines.append(f"- Duration range: {audio['duration_range']}")
+            if audio.get("sample_rates"):
+                section_lines.append(f"- Sample rates: {audio['sample_rates']}")
+            if audio.get("channels"):
+                section_lines.append(f"- Channels: {audio['channels']}")
+            if audio.get("formats"):
+                section_lines.append(f"- Formats: {', '.join(audio['formats'])}")
+            if audio.get("preprocessing_notes"):
+                section_lines.append(f"- **Preprocessing guidance**: {audio['preprocessing_notes']}")
+
+        # Text data stats
+        text = domain_stats.get("text")
+        if text:
+            section_lines.append("### Text Data:")
+            if text.get("text_columns"):
+                section_lines.append(f"- Text columns: {', '.join(text['text_columns'])}")
+            if text.get("avg_char_length"):
+                section_lines.append(f"- Average character length: {text['avg_char_length']}")
+            if text.get("avg_word_count"):
+                section_lines.append(f"- Average word count: {text['avg_word_count']}")
+            if text.get("max_word_count"):
+                section_lines.append(f"- Maximum word count: {text['max_word_count']}")
+            if text.get("preprocessing_notes"):
+                section_lines.append(f"- **Preprocessing guidance**: {text['preprocessing_notes']}")
+
+        # Object detection data stats
+        od = domain_stats.get("object_detection")
+        if od:
+            section_lines.append("### Object Detection Data:")
+            if od.get("annotation_format"):
+                section_lines.append(f"- **Annotation format**: {od['annotation_format']}")
+            if od.get("total_files") or od.get("total_images"):
+                section_lines.append(f"- Total files: {od.get('total_files', od.get('total_images', 'N/A'))}")
+            if od.get("total_annotations"):
+                section_lines.append(f"- Total annotations: {od['total_annotations']}")
+            if od.get("num_categories"):
+                section_lines.append(f"- Number of categories: {od['num_categories']}")
+            if od.get("category_names"):
+                names = od["category_names"]
+                display = ", ".join(names[:15])
+                if len(names) > 15:
+                    display += f" ... ({len(names)} total)"
+                section_lines.append(f"- Categories: {display}")
+            if od.get("avg_annotations_per_image"):
+                section_lines.append(f"- Average annotations per image: {od['avg_annotations_per_image']}")
+            if od.get("class_imbalance_notes"):
+                section_lines.append(f"- Class imbalance: {od['class_imbalance_notes']}")
+            if od.get("preprocessing_notes"):
+                section_lines.append(f"- **Preprocessing guidance**: {od['preprocessing_notes']}")
+
+        # Time series data stats
+        ts = domain_stats.get("time_series")
+        if ts:
+            section_lines.append("### Time Series Data:")
+            if ts.get("primary_datetime_col"):
+                section_lines.append(f"- Primary datetime column: {ts['primary_datetime_col']}")
+            if ts.get("frequency"):
+                section_lines.append(f"- Detected frequency: {ts['frequency']}")
+            if ts.get("time_range"):
+                section_lines.append(f"- Time range: {ts['time_range']}")
+            if ts.get("has_gaps") is not None:
+                section_lines.append(f"- Has gaps: {'Yes' if ts['has_gaps'] else 'No'}")
+                if ts.get("gap_ratio"):
+                    section_lines.append(f"- Gap ratio: {ts['gap_ratio']}")
+            if ts.get("trend_direction"):
+                section_lines.append(f"- Trend direction: {ts['trend_direction']}")
+            if ts.get("seasonality_period_hint"):
+                section_lines.append(f"- Seasonality period hint: {ts['seasonality_period_hint']} steps")
+            if ts.get("is_stationary") is not None:
+                section_lines.append(f"- Stationary: {'Yes' if ts['is_stationary'] else 'No (may need differencing)'}")
+            if ts.get("preprocessing_notes"):
+                section_lines.append(f"- **Preprocessing guidance**: {ts['preprocessing_notes']}")
+
+        # Video data stats
+        vid = domain_stats.get("video")
+        if vid:
+            section_lines.append("### Video Data:")
+            section_lines.append(f"- Total video files: {vid.get('total_files', 'N/A')}")
+            if vid.get("avg_duration"):
+                section_lines.append(f"- Average duration: {vid['avg_duration']}")
+            if vid.get("avg_resolution"):
+                section_lines.append(f"- Average resolution: {vid['avg_resolution']}")
+            if vid.get("uniform_resolution") is not None:
+                section_lines.append(f"- Uniform resolution: {'Yes' if vid['uniform_resolution'] else 'No (resizing required)'}")
+            if vid.get("avg_fps"):
+                section_lines.append(f"- Average FPS: {vid['avg_fps']}")
+            if vid.get("formats"):
+                section_lines.append(f"- Formats: {', '.join(vid['formats'])}")
+            if vid.get("num_classes_from_folders"):
+                section_lines.append(f"- Classes detected from folder structure: {vid['num_classes_from_folders']}")
+            if vid.get("preprocessing_notes"):
+                section_lines.append(f"- **Preprocessing guidance**: {vid['preprocessing_notes']}")
+
+        # Only return if we actually added domain-specific content (beyond the header)
+        if len(section_lines) <= 1:
+            return ""
+
+        section_lines.append("")
+        return "\n".join(section_lines) + "\n"
 
     def _generate_id_format_section(self, profiling_result: Dict[str, Any]) -> str:
         """Generate ID format analysis section for the prompt."""
