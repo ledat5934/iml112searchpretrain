@@ -46,7 +46,10 @@ The following preprocessing code, including a function `preprocess_data(file_pat
     b. **Handle the data based on the iteration type (see IMPORTANT DATA HANDLING).**
     c. Call your train_and_predict() function.
     d. Save the final predictions to a submission.csv file.
-5.  **Critical Error Handling**: The main execution block MUST be wrapped in a `try...except` block. If ANY exception occurs, the script MUST print the error to stderr and **exit with a non-zero status code** (`sys.exit(1)`).
+5.  **Critical Error Handling (NO SILENT FAILURE)**: The main execution block MUST be wrapped in a `try...except` block. If ANY exception occurs, the script MUST print the error to stderr and **exit with a non-zero status code** (`sys.exit(1)`).
+    - **NEVER** create/write a placeholder or empty `submission.csv` in the `except` block.
+    - **NEVER** attempt to "avoid failure" by writing a template submission (e.g., using `sample_submission.csv` columns with zero rows).
+    - If inference cannot be completed, the script MUST fail so the pipeline can trigger debugging.
 6.  Follow the modeling guidelines for algorithm choice.
 7.  Do not use extensive hyperparameter tuning unless specified. Keep the code efficient.
 8.  Limit comments in the code.

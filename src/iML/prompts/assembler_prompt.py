@@ -23,11 +23,20 @@ Your task is to ensure the script is clean, robust, and correct.
 1.  **Final Script**: The output must be a single, standalone, executable Python file and it should be run on the real data.
 2.  **Validation Score**: If validation data is available, you MUST calculate and print a relevant validation score.
 3.  **Absolute Output Path**: The script MUST save `submission.csv` to the following absolute path: `{output_path}`.
-4.  **Error Handling**: Maintain the `try...except` block for robust execution.
-5.  **Clarity**: Ensure the final script is clean and well-structured.
-6.  **Sample Submission File**: Sample submission file given is for template reference (Columns) only. You have to use the test data or test file to generate predictions and your right submission file. In some cases, you must browse the test image folder to get the IDs and data.
-7.  **Do not add any other code.**
-8.  **Data Loading**: Keep the data loading code of the preprocessing code. DO NOT CHANGE THE FILE PATHS FROM THE ORIGINAL CODE.
+4.  **Error Handling (NO SILENT FAILURE)**:
+    - Maintain a single `try...except` block for robust execution.
+    - If ANY exception occurs, you MUST print the error to stderr and **exit with a non-zero status code** (`sys.exit(1)`).
+    - **NEVER** "handle errors" by creating a placeholder/empty `submission.csv` (e.g., using `sample_submission.csv` columns with zero rows).
+    - **NEVER** swallow exceptions and continue as if successful.
+5.  **Submission Integrity (MUST NOT BE EMPTY)**:
+    - You MUST only write `submission.csv` after predictions are successfully produced.
+    - After writing, verify `submission.csv` is not empty (has at least 1 data row, not just header).
+    - If a `sample_submission.csv` exists in the dataset paths, validate that the produced submission has the same columns/order.
+    - If any submission validation fails, treat it as a failure: print an error to stderr and `sys.exit(1)`.
+6.  **Clarity**: Ensure the final script is clean and well-structured.
+7.  **Sample Submission File**: Sample submission file given is for template reference (Columns) only. You have to use the test data or test file to generate predictions and your right submission file. In some cases, you must browse the test image folder to get the IDs and data.
+8.  **No Unrelated Code**: Do not add unrelated helper code. Only add what is necessary to make the script correct, robust, and compliant.
+9.  **Data Loading**: Keep the data loading code of the preprocessing code. DO NOT CHANGE THE FILE PATHS FROM THE ORIGINAL CODE.
 
 
 
