@@ -51,7 +51,10 @@ The following preprocessing code, including a function `preprocess_data(file_pat
     b. **Handle the data based on the iteration type (see IMPORTANT DATA HANDLING).**
     c. Call your train_and_predict() function.
     d. Save the final predictions to a submission.csv file.
-5.  **Critical Error Handling**: The main execution block MUST be wrapped in a `try...except` block. If ANY exception occurs, the script MUST print the error to stderr and **exit with a non-zero status code** (`sys.exit(1)`).
+5.  **Critical Error Handling (NO SILENT FAILURE)**: The main execution block MUST be wrapped in a `try...except` block. If ANY exception occurs, the script MUST print the error to stderr and **exit with a non-zero status code** (`sys.exit(1)`).
+    - **NEVER** create/write a placeholder or empty `submission.csv` in the `except` block.
+    - **NEVER** attempt to "avoid failure" by writing a template submission (e.g., using `sample_submission.csv` columns with zero rows).
+    - If inference cannot be completed, the script MUST fail so the pipeline can trigger debugging.
 6.  Follow the modeling guidelines for algorithm choice.
 7.  Do not use extensive hyperparameter tuning unless specified. Keep the code efficient.
 8.  Limit comments in the code.
@@ -59,13 +62,16 @@ The following preprocessing code, including a function `preprocess_data(file_pat
 10. The submission file must have the same structure (number of columns) as the sample submission file provided in the dataset, but may have different ID. You have to use the test data to generate predictions and your right submission file. In some cases, you must browse the test image folder to get the IDs and data.
 11. Your final COMPLETE Python code should have only ONE main function. If there are duplicate main function, remove the duplicates and keep only one main function.
 12. Sample submission file given is for template reference (Columns) only. You have to use the test data or test file to generate predictions and your right submission file. In some cases, you must browse the test image folder to get the IDs and data.
-13. **REPRODUCIBILITY & VALIDATION**: 
+13. **Submission Integrity (MUST NOT BE EMPTY)**:
+    - Write `submission.csv` ONLY after successful inference on the true test set.
+    - Validate that `submission.csv` contains at least 1 data row (not header-only). If empty, raise an exception to trigger debugging.
+14. **REPRODUCIBILITY & VALIDATION**: 
     - Always use random_state=42 for ALL random operations (model initialization, etc.)
     - Use a single validation set for evaluation (NO k-fold or cross-validation)
     - Print the validation score in the format: "Validation Score: <score_value>"
     - Use the evaluation metrics specified in the modeling guidelines
-14. Pay attention to the create_submission guideline in the modeling guidelines to create valid submission, for example, if the guideline says that '1_2_1' for image 1, row 2, column 1, the index of row and column should begin with 1, not 0.
-15. **INPUT CONTRACT (MUST FOLLOW)**:
+15. Pay attention to the create_submission guideline in the modeling guidelines to create valid submission, for example, if the guideline says that '1_2_1' for image 1, row 2, column 1, the index of row and column should begin with 1, not 0.
+16. **INPUT CONTRACT (MUST FOLLOW)**:
     - You MUST follow the MODEL INPUT DATA CONTRACT (if provided) and the input contract notes.
     - Consume the output of `preprocess_data()` exactly as specified by that contract.
 """
