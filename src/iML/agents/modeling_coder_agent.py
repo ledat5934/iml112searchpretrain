@@ -5,6 +5,7 @@ from typing import Dict, Any
 from .base_agent import BaseAgent
 from ..prompts import ModelingCoderPrompt
 from .utils import init_llm
+from ..utils.file_io import get_directory_structure
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +36,7 @@ class ModelingCoderAgent(BaseAgent):
         guideline = self.manager.guideline
         description = self.manager.description_analysis
         preprocessing_code = self.manager.preprocessing_code
+        datafile_structure = get_directory_structure(self.manager.input_data_folder)
         knowledge_key = iteration_type or "default"
         knowledge_pack = {}
         if hasattr(self.manager, "knowledge_packs"):
@@ -53,6 +55,7 @@ class ModelingCoderAgent(BaseAgent):
             preprocessing_code=preprocessing_code,
             iteration_type=iteration_type,
             input_contract_notes=input_contract_notes,
+            datafile_structure=datafile_structure,
             decorator_chain=decorator_chain,
         )
         

@@ -38,6 +38,9 @@ Your task is to ensure the script is clean, robust, and correct.
 8.  **No Unrelated Code**: Do not add unrelated helper code. Only add what is necessary to make the script correct, robust, and compliant.
 9.  **Data Loading**: Keep the data loading code of the preprocessing code. DO NOT CHANGE THE FILE PATHS FROM THE ORIGINAL CODE.
 
+## DATAFILE STRUCTURE (SUMMARY)
+{datafile_structure}
+
 
 
 ## ORIGINAL CODE:
@@ -51,7 +54,7 @@ Based on the context above, generate the complete and corrected Python code. The
 ## FINAL, CORRECTED CODE:
 """
 
-    def build(self, original_code: str, output_path: str, description: Dict, error_message: str = None, iteration_type: str = None, decorator_chain=None) -> str:
+    def build(self, original_code: str, output_path: str, description: Dict, error_message: str = None, iteration_type: str = None, datafile_structure: str | None = None, decorator_chain=None) -> str:
         """Build prompt to assemble or fix code."""
 
         retry_context = ""
@@ -96,6 +99,7 @@ The code above failed with the following error.
             original_code=original_code,
             output_path=output_path,
             retry_context=retry_context,
+            datafile_structure=datafile_structure or "N/A",
         )
         
         # Append full description analysis as JSON context

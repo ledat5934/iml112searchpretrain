@@ -53,6 +53,11 @@ IMPORTANT: DO NOT CREATE DUMMY DATA.
 14. **REPRODUCIBILITY**: Always use random_state=42 for ALL random operations (train_test_split, random sampling, etc.)
 15. **SPLIT STRATEGY**: Use a single train/validation split only. DO NOT use k-fold or cross-validation.
 16. **INPUT CONTRACT OVERRIDE**: If the input contract notes mention `data.yaml` or Ultralytics/YOLO/RT-DETR, you MUST generate `data.yaml` and return its path (DataLoader is optional and secondary).
+17. **ABSOLUTE BAN: NO DUMMY / NO SYNTHETIC DATA (STRICT)**:
+    - You MUST NOT generate, simulate, or fabricate ANY data under ANY condition (including "local testing only").
+    - Do NOT add any code like: `if not os.path.exists(...): create dummy files`, `os.makedirs(...)` to build a fake dataset, `pd.DataFrame(...).to_csv(...)` to create missing CSVs, or writing parquet/images as placeholders.
+    - If an expected input file/folder does not exist, the script MUST fail loudly: print a clear error to stderr and `sys.exit(1)`.
+    - Only read from the provided dataset paths; you may create outputs/artifacts ONLY in the run output folder (e.g., under `runs/.../states/`), never inside the dataset folder.
 
 ## CODE STRUCTURE:
 ```python

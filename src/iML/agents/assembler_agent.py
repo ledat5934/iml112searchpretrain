@@ -7,6 +7,7 @@ from typing import Dict, Any
 from .base_agent import BaseAgent
 from ..prompts import AssemblerPrompt
 from .utils import init_llm
+from ..utils.file_io import get_directory_structure
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +38,7 @@ class AssemblerAgent(BaseAgent):
         preprocessing_code = self.manager.preprocessing_code
         modeling_code = self.manager.modeling_code
         description = self.manager.description_analysis
+        datafile_structure = get_directory_structure(self.manager.input_data_folder)
 
         if not preprocessing_code or not modeling_code:
             error = "Preprocessing or modeling code not available."
@@ -65,6 +67,7 @@ class AssemblerAgent(BaseAgent):
                 description=description,
                 error_message=error_message,
                 iteration_type=iteration_type,
+                datafile_structure=datafile_structure,
                 decorator_chain=decorator_chain,
             )
 
@@ -131,6 +134,7 @@ class AssemblerAgent(BaseAgent):
                         filename=filename,
                         attempt=attempt + 1,
                         task_description=task_desc,
+                        datafile_structure=datafile_structure,
                         require_submission=True,
                         submission_filename="submission.csv",
                     )
@@ -176,6 +180,7 @@ class AssemblerAgent(BaseAgent):
                     filename=filename,
                     attempt=attempt + 1,
                     task_description=task_desc,
+                    datafile_structure=datafile_structure,
                     require_submission=True,
                     submission_filename="submission.csv",
                 )

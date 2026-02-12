@@ -7,6 +7,7 @@ from typing import Any, Dict
 from .base_agent import BaseAgent
 from .utils import init_llm
 from ..prompts import MonolithicCoderPrompt
+from ..utils.file_io import get_directory_structure
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +79,7 @@ class MonolithicCoderAgent(BaseAgent):
                     phase_name="monolithic",
                     attempt=attempt,
                 )
+                datafile_structure = get_directory_structure(self.manager.input_data_folder)
                 ok, patched, _ = self.manager.debug_agent.llm_debug_fix(
                     code=code_to_execute,
                     stderr=error_message or "",
@@ -85,6 +87,7 @@ class MonolithicCoderAgent(BaseAgent):
                     filename=filename,
                     attempt=attempt,
                     task_description=task_desc,
+                    datafile_structure=datafile_structure,
                     require_submission=True,
                     submission_filename="submission.csv",
                 )

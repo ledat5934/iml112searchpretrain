@@ -118,6 +118,7 @@ class PreprocessingCoderAgent(BaseAgent):
                     filename=filename,
                     attempt=attempt + 1,
                     task_description=task_desc,
+                    datafile_structure=datafile_structure,
                 )
                 if ok:
                     logger.info("Preprocessing code executed successfully after debug fixes (no re-run).")
