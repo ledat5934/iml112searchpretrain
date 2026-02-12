@@ -24,6 +24,9 @@ This script will be combined with the provided preprocessing code.
 - **Output data format**: {output_data_format}
 - **Submission file description**: {submission_file_description}
 
+## DATAFILE STRUCTURE (SUMMARY)
+{datafile_structure}
+
 {data_handling_instruction}
 ## MODELING GUIDELINES:
 {modeling_guideline}
@@ -73,6 +76,7 @@ The following preprocessing code, including a function `preprocess_data(file_pat
         error_message: str = None,
         iteration_type: str = None,
         input_contract_notes: list[str] | None = None,
+        datafile_structure: str | None = None,
     ) -> str:
         """Build prompt to generate modeling code."""
         
@@ -110,6 +114,7 @@ The following preprocessing code, including a function `preprocess_data(file_pat
             data_handling_instruction=data_handling,
             submission_file_description=description.get('submission file description', 'N/A'),
             input_contract_notes_section=input_contract_notes_section,
+            datafile_structure=datafile_structure or "N/A",
         )
 
         # Append full description analysis as JSON context

@@ -34,6 +34,9 @@ class DebugAgent(BaseAgent):
             """# Error report
 {bug}
 
+# Dataset file structure (SUMMARY)
+{datafile_structure}
+
 # Description analysis (JSON)
 {description_json}
 
@@ -48,6 +51,9 @@ class DebugAgent(BaseAgent):
         self.BUG_REFINE_INSTR = (
             """# Task description
 {task_description}
+
+# Dataset file structure (SUMMARY)
+{datafile_structure}
 
 # Description analysis (JSON)
 {description_json}
@@ -90,7 +96,7 @@ class DebugAgent(BaseAgent):
             pass
         return {}
 
-    def _llm_bug_summary(self, stderr: str, filename: str, phase_name: str, attempt_index: int) -> str:
+    def _llm_bug_summary(self, stderr: str, filename: str, phase_name: str, attempt_index: int, datafile_structure: Optional[str] = None) -> str:
         # Choose an LLM config available (reuse assembler)
         llm_config = getattr(self.manager.assembler_agent, 'llm_config', None)
         if llm_config is None:
@@ -113,6 +119,7 @@ class DebugAgent(BaseAgent):
         prompt = self.BUG_SUMMARY_INSTR.format(
             bug=stderr,
             filename=filename,
+            datafile_structure=datafile_structure or "N/A",
             description_json=description_json,
             submission_path_note=submission_path_note,
         )
@@ -141,7 +148,7 @@ class DebugAgent(BaseAgent):
             return m.group(1).strip()
         return None
 
-    def _llm_refine_code(self, task_description: str, code: str, bug_summary: str, phase_name: str, attempt_index: int) -> tuple[str, str, str]:
+    def _llm_refine_code(self, task_description: str, code: str, bug_summary: str, phase_name: str, attempt_index: int, datafile_structure: Optional[str] = None) -> tuple[str, str, str]:
         # Pull description from manager to include context
         description = self._get_description() or {}
         try:
@@ -161,6 +168,7 @@ class DebugAgent(BaseAgent):
 
         prompt_text = self.BUG_REFINE_INSTR.format(
             task_description=task_description or "",
+            datafile_structure=datafile_structure or "N/A",
             description_json=description_json,
             code=code,
             bug=bug_summary,
@@ -292,7 +300,18 @@ class DebugAgent(BaseAgent):
         self.manager.save_and_log_states(raw_text, f"{phase_name}/attempt_{attempt_index}/raw_response.txt")
         return refined_code, raw_text, prompt_text
 
-    def llm_debug_fix(self, code: str, stderr: str, phase_name: str, filename: str, attempt: int, task_description: Optional[str], require_submission: bool = False, submission_filename: Optional[str] = None) -> Tuple[bool, str, Dict[str, Any]]:
+    def llm_debug_fix(
+        self,
+        code: str,
+        stderr: str,
+        phase_name: str,
+        filename: str,
+        attempt: int,
+        task_description: Optional[str],
+        datafile_structure: Optional[str] = None,
+        require_submission: bool = False,
+        submission_filename: Optional[str] = None,
+    ) -> Tuple[bool, str, Dict[str, Any]]:
         """Two-stage LLM debug: summarize (no search) then refine (with google_search); loop up to max_rounds.
 
         If require_submission is True (used for assemble), success requires both returncode==0 and the
@@ -308,10 +327,17 @@ class DebugAgent(BaseAgent):
             # The bug summary must be stored with the code that produced the error
             bug_attempt_index = attempt + (round_idx - 1)  # first round -> current failed attempt
             # 1) Summarize bug into the failed attempt folder
-            bug_summary = self._llm_bug_summary(stderr, filename, phase_name, bug_attempt_index)
+            bug_summary = self._llm_bug_summary(stderr, filename, phase_name, bug_attempt_index, datafile_structure=datafile_structure)
             # 2) Refine code for the next attempt
             refined_attempt_index = bug_attempt_index + 1
-            refined, raw_text, prompt_text = self._llm_refine_code(task_description or "", current, bug_summary, phase_name, refined_attempt_index)
+            refined, raw_text, prompt_text = self._llm_refine_code(
+                task_description or "",
+                current,
+                bug_summary,
+                phase_name,
+                refined_attempt_index,
+                datafile_structure=datafile_structure,
+            )
             self.logger.detail(
                 f"[DEBUG_AGENT] round={round_idx} phase={phase_name} refined_attempt_index={refined_attempt_index} "
                 f"refined_len={len(refined) if refined else 0} raw_len={len(raw_text) if raw_text else 0}"
