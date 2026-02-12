@@ -42,6 +42,7 @@ class ModelingCoderAgent(BaseAgent):
         if hasattr(self.manager, "knowledge_packs"):
             knowledge_pack = self.manager.knowledge_packs.get(knowledge_key, {}) or {}
         input_contract_notes = knowledge_pack.get("input_contract_notes") or []
+        model_input_data = knowledge_pack.get("model_input_data") or []
         
         if not preprocessing_code:
             logger.error("Preprocessing code not found. Cannot continue.")
@@ -55,6 +56,7 @@ class ModelingCoderAgent(BaseAgent):
             iteration_type=iteration_type,
             input_contract_notes=input_contract_notes,
             datafile_structure=datafile_structure,
+            model_input_data=model_input_data,
         )
         
         # Save prompt for modeling

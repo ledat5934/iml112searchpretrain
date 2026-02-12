@@ -33,6 +33,8 @@ IMPORTANT: DO NOT CREATE DUMMY DATA.
 
 {input_contract_notes_section}
 
+{model_input_data_section}
+
 ## TARGET INFO:
 {target_info}
 
@@ -52,7 +54,9 @@ IMPORTANT: DO NOT CREATE DUMMY DATA.
 13. The provided file paths are the only valid paths to load the data. Do not create any dummy data files.
 14. **REPRODUCIBILITY**: Always use random_state=42 for ALL random operations (train_test_split, random sampling, etc.)
 15. **SPLIT STRATEGY**: Use a single train/validation split only. DO NOT use k-fold or cross-validation.
-16. **INPUT CONTRACT OVERRIDE**: If the input contract notes mention `data.yaml` or Ultralytics/YOLO/RT-DETR, you MUST generate `data.yaml` and return its path (DataLoader is optional and secondary).
+16. **INPUT CONTRACT (MUST FOLLOW)**:
+    - You MUST follow the "MODEL INPUT DATA CONTRACT" (if provided) and the input contract notes.
+    - Ensure `preprocess_data(file_paths: dict)` returns exactly the expected artifact(s) so the modeling code can consume them without adaptation hacks.
 17. **ABSOLUTE BAN: NO DUMMY / NO SYNTHETIC DATA (STRICT)**:
     - You MUST NOT generate, simulate, or fabricate ANY data under ANY condition (including "local testing only").
     - Do NOT add any code like:
@@ -113,6 +117,7 @@ if __name__ == "__main__":
         error_message: str = None,
         iteration_type: str = None,
         input_contract_notes: list[str] | None = None,
+        model_input_data: list[str] | None = None,
         datafile_structure: str | None = None,
     ) -> str:
         """Build prompt to generate preprocessing code."""
@@ -140,6 +145,17 @@ if __name__ == "__main__":
                     + "\n"
                 )
 
+        model_input_data_section = ""
+        if model_input_data:
+            items = [x for x in model_input_data if x]
+            if items:
+                model_input_data_section = (
+                    "## MODEL INPUT DATA CONTRACT (from Knowledge Retrieval)\n"
+                    "The modeling code MUST be able to consume the output of preprocess_data() in this form.\n"
+                    + "\n".join(f"- {x}" for x in items)
+                    + "\n"
+                )
+
         prompt = self.template.format(
             dataset_name=description.get('name', 'N/A'),
             task_desc=description.get('task', 'N/A'),
@@ -153,6 +169,7 @@ if __name__ == "__main__":
             batch_processing_instruction=batch_instruction,
             data_return_format=data_format,
             input_contract_notes_section=input_contract_notes_section,
+            model_input_data_section=model_input_data_section,
             datafile_structure=datafile_structure or "N/A",
         )
 
@@ -246,15 +263,13 @@ For Custom Neural Networks with Architecture Search:
 """
         elif iteration_type == "pretrained":
             return """
-For Pretrained Models (preferably PyTorch-based):
-- Format data to match pretrained model input requirements
-- For text: prepare tokenization compatible with HuggingFace tokenizers (PyTorch format)
-- For images: resize and normalize according to model specifications (torchvision transforms)
-- For tabular: extract features suitable for pretrained embeddings
-- Use PyTorch tensors and data loaders when possible
-- Handle special tokens or formatting required by pretrained models
-- Ensure data preprocessing matches pretrained model's training format
-- Prefer HuggingFace datasets and transformers library (PyTorch backend)
+For Pretrained Models (prioritize PyTorch over TensorFlow when possible):
+- Format data to match the chosen pretrained model’s input requirements.
+- Follow the MODEL INPUT DATA CONTRACT (if provided) and input contract notes.
+- For text: tokenize using the chosen model’s tokenizer/processor; output tensors/datasets compatible with the modeling code.
+- For images/video/audio: apply model-specific resizing/normalization/feature extraction; keep batch-by-batch processing to avoid OOM.
+- For tabular: return clean numerical tensors/arrays; preserve consistent column order across train/val/test.
+- Ensure preprocessing matches the pretrained model’s expected training/inference format (special tokens, padding, normalization, etc.).
 """
         else:
             return ""
@@ -270,14 +285,12 @@ For Pretrained Models (preferably PyTorch-based):
         elif iteration_type == "pretrained":
             batch_instruction = (
                 "IMPORTANT: Return the most appropriate input artifacts for the chosen pretrained model. "
-                "If the model requires a dataset config (e.g., Ultralytics YOLO), generate data.yaml and return its path. "
-                "If the model uses PyTorch/HF, return Dataset/DataLoader. If unclear, return both data.yaml and DataLoader when feasible."
+                "If a MODEL INPUT DATA CONTRACT is provided, you MUST follow it exactly. "
+                "Otherwise, choose the simplest artifact that the modeling code can consume reliably (e.g., in-memory arrays, finite DataLoaders, or a dataset config path)."
             )
             data_format = (
                 "5. Create a function `preprocess_data()` that takes a dictionary of file paths and returns the most appropriate "
-                "input artifacts for the chosen pretrained model. If the model requires a dataset config (e.g., Ultralytics YOLO), "
-                "generate data.yaml and return its path. If the model uses PyTorch/HF, return Dataset/DataLoader. "
-                "If unclear, return both data.yaml and DataLoader when feasible."
+                "input artifacts for the chosen pretrained model. If a MODEL INPUT DATA CONTRACT is provided, you MUST follow it exactly."
             )
         else:
             # Default behavior

@@ -33,6 +33,8 @@ This script will be combined with the provided preprocessing code.
 
 {input_contract_notes_section}
 
+{model_input_data_section}
+
 
 ## PREPROCESSING CODE (Do NOT include this in your response):
 The following preprocessing code, including a function `preprocess_data(file_paths: dict)`, will be available in the execution environment. You must call it to get the data.
@@ -63,8 +65,9 @@ The following preprocessing code, including a function `preprocess_data(file_pat
     - Print the validation score in the format: "Validation Score: <score_value>"
     - Use the evaluation metrics specified in the modeling guidelines
 14. Pay attention to the create_submission guideline in the modeling guidelines to create valid submission, for example, if the guideline says that '1_2_1' for image 1, row 2, column 1, the index of row and column should begin with 1, not 0.
-15. **PRETRAINED INPUT CONTRACT**: If model_selection corresponds to Ultralytics YOLO/RT-DETR, you MUST use a data.yaml path instead of passing DataLoader directly.
-16. **INPUT CONTRACT OVERRIDE**: If input contract notes mention `data.yaml` or Ultralytics/YOLO/RT-DETR, you MUST use a data.yaml path (even if DataLoader is available).
+15. **INPUT CONTRACT (MUST FOLLOW)**:
+    - You MUST follow the MODEL INPUT DATA CONTRACT (if provided) and the input contract notes.
+    - Consume the output of `preprocess_data()` exactly as specified by that contract.
 """
 
     def build(
@@ -77,6 +80,7 @@ The following preprocessing code, including a function `preprocess_data(file_pat
         iteration_type: str = None,
         input_contract_notes: list[str] | None = None,
         datafile_structure: str | None = None,
+        model_input_data: list[str] | None = None,
     ) -> str:
         """Build prompt to generate modeling code."""
         
@@ -102,6 +106,17 @@ The following preprocessing code, including a function `preprocess_data(file_pat
                     + "\n"
                 )
 
+        model_input_data_section = ""
+        if model_input_data:
+            items = [x for x in model_input_data if x]
+            if items:
+                model_input_data_section = (
+                    "## MODEL INPUT DATA CONTRACT (from Knowledge Retrieval)\n"
+                    "You MUST consume the output of preprocess_data() according to this contract.\n"
+                    + "\n".join(f"- {x}" for x in items)
+                    + "\n"
+                )
+
         prompt = self.template.format(
             dataset_name=description.get('name', 'N/A'),
             task_desc=description.get('task', 'N/A'),
@@ -115,6 +130,7 @@ The following preprocessing code, including a function `preprocess_data(file_pat
             submission_file_description=description.get('submission file description', 'N/A'),
             input_contract_notes_section=input_contract_notes_section,
             datafile_structure=datafile_structure or "N/A",
+            model_input_data_section=model_input_data_section,
         )
 
         # Append full description analysis as JSON context
@@ -199,18 +215,12 @@ For Custom Neural Networks with Architecture Search:
 """
         elif iteration_type == "pretrained":
             return """
-For Pretrained Models (prioritize PyTorch):
-- Load and fine-tune pretrained models (PyTorch backend preferred)
-- Use transformers library with PyTorch backend for text models
-- Use torchvision for vision models (ResNet, ViT, etc.)
-- Implement transfer learning approach with proper layer freezing/unfreezing
-- Use HuggingFace tokenizers and PyTorch data loaders
-- Fine-tune with appropriate learning rates (often lower than training from scratch)
-- Handle model adaptation for target task (classification head modification)
-- Use PyTorch-specific optimizers and schedulers
-- Implement gradual unfreezing strategy if needed
-- Prefer torch.nn.functional and PyTorch ecosystem
-- IMPORTANT: You should set ignore_mismatched_sizes=True
+For Pretrained Models (prioritize PyTorch over TensorFlow when possible):
+- Use the model/provider-specific loading and preprocessing utilities required by the chosen pretrained model.
+- Implement transfer learning with appropriate freezing/unfreezing and a task-specific head.
+- Fine-tune with an appropriate learning rate (often lower than training from scratch) and use early stopping.
+- Use PyTorch optimizers/schedulers and standard training loops where applicable.
+- If the chosen pretrained model family supports it, set compatibility flags when swapping heads (e.g., allow mismatched head sizes).
 - You should use large number of epochs(15, 20, ...) with early stopping = 3
 """
         else:
@@ -355,11 +365,12 @@ if __name__ == "__main__":
         
         elif iteration_type == "pretrained":
             return """## IMPORTANT DATA HANDLING
-The provided preprocessing code's `preprocess_data` function returns **a tuple of PyTorch DataLoader objects** (e.g., `train_loader, val_loader, test_loader`) with FINITE length formatted for pretrained models.
+The provided preprocessing code's `preprocess_data` function returns artifacts to be consumed by the modeling code.
+If a MODEL INPUT DATA CONTRACT is provided, you MUST follow it exactly.
 
 ### Pretrained Model Data Handling (PyTorch):
-- **For pretrained models**: Use the provided PyTorch DataLoader objects directly
-- **CRITICAL**: DataLoaders have FINITE length (len(train_loader) returns number of batches). Your training loop MUST iterate exactly once per epoch.
+- Prefer PyTorch-based training/inference when possible.
+- If using DataLoaders: they have FINITE length (len(train_loader) returns number of batches). Your training loop MUST iterate exactly once per epoch.
 - **Training Logic**: Use standard PyTorch training pattern:
   ```python
   for epoch in range(num_epochs):
@@ -369,7 +380,6 @@ The provided preprocessing code's `preprocess_data` function returns **a tuple o
   ```
 - **DO NOT**: Create infinite loops or IterableDataset without proper stopping conditions
 - **PyTorch Integration**: Use torch.nn.Module, torch.optim, standard training loops
-- **HuggingFace**: Prefer transformers library with PyTorch backend
 - **Validation**: Iterate through val_loader ONCE per validation check
 - **Testing**: Iterate through test_loader ONCE for final predictions
 
@@ -378,7 +388,6 @@ The provided preprocessing code's `preprocess_data` function returns **a tuple o
 import pandas as pd
 import numpy as np
 import torch
-from transformers import AutoModel, AutoTokenizer, AutoConfig
 from sklearn.metrics import accuracy_score
 import sys
 
@@ -386,11 +395,9 @@ def train_and_predict(train_loader, val_loader, test_loader):
     # CRITICAL: train_loader, val_loader, test_loader are PyTorch DataLoader with FINITE length
     # len(train_loader) gives number of batches
     
-    # Load pretrained model (adjust based on your task type)
-    # TODO: Replace "pretrained_model_name" with actual model name based on guideline
-    model_name = "pretrained_model_name" 
-    model = AutoModel.from_pretrained(model_name)
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    # Load chosen pretrained model using its required library/API (PyTorch preferred)
+    # TODO: Replace with the exact loading code for the selected model family
+    model = ...
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model.to(device)
     

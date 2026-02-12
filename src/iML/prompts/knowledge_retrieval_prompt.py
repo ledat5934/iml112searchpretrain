@@ -46,8 +46,11 @@ Return a SINGLE JSON object with the following fields (add more if needed, but k
     "split_strategy": "...",
     "notes": "..."
   }},
+  "model_input_data": [
+    "dataframe|numpy_arrays|dataloader|data_yaml_path|hf_dataset|file_paths_only"
+  ],
   "input_contract_notes": [
-    "..."
+    "Short, concrete constraints about what preprocess_data() MUST return to be consumable by the chosen model/framework."
   ],
   "submission_notes": [
     "..."
@@ -67,6 +70,13 @@ Return a SINGLE JSON object with the following fields (add more if needed, but k
 IMPORTANT:
 - Output MUST be valid JSON (no markdown, no code fences).
 - Do NOT include any example code.
+- `model_input_data` is a short contract for downstream agents:
+  - Use one PRIMARY value (first item) and optionally 1-2 secondary alternatives.
+  - Examples of intended meaning:
+    - "dataframe": preprocessing returns in-memory pandas DataFrames/arrays.
+    - "dataloader": preprocessing returns PyTorch DataLoaders / Dataset objects.
+    - "data_yaml_path": preprocessing writes a `data.yaml` file and returns its path for frameworks like Ultralytics.
+    - "file_paths_only": preprocessing returns file paths/manifests, modeling loads lazily/batch-wise.
 """
 
     def build(

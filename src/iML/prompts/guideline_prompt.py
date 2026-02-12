@@ -58,6 +58,8 @@ class GuidelinePrompt(BasePrompt):
 - Ensure that your plan is self-contained with sufficient instructions to be executed by the AI agents. 
 - Ensure that your plan includes all the key points and instructions (from handling data to modeling) so that the AI agents can successfully implement them. Do NOT directly write the code.
 - Ensure that your plan completely include the end-to-end process of machine learning pipeline in detail (i.e., from data loading to model training and submission creation) when applicable based on the given requirements.
+- **INPUT CONTRACT (CRITICAL)**: If a knowledge pack is provided, you MUST align your plan with `knowledge_pack.model_input_data` and `knowledge_pack.input_contract_notes`.
+  - Explicitly state what `preprocess_data()` must return (e.g., DataFrames/arrays vs DataLoaders vs a config path like `data.yaml`) and how the modeling code will consume it.
 - **CRITICAL MEMORY CONSTRAINT FOR NEURAL NETWORKS**: When using neural networks (custom NN or pretrained models) with image/video/audio data or large datasets, you MUST specify batch processing approach in your preprocessing strategy. Use batch_size (e.g., 32, 64, 128) for feature extraction, data loading, and prediction. For traditional ML algorithms, you can load entire preprocessed features into memory after feature extraction is done in batches.
 
 JUSTIFY YOUR CHOICES INTERNALLY: Even if the final JSON does not include every reasoning detail, your internal decision process must be sound, based on the data properties.

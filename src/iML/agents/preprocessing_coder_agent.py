@@ -42,6 +42,7 @@ class PreprocessingCoderAgent(BaseAgent):
         if hasattr(self.manager, "knowledge_packs"):
             knowledge_pack = self.manager.knowledge_packs.get(knowledge_key, {}) or {}
         input_contract_notes = knowledge_pack.get("input_contract_notes") or []
+        model_input_data = knowledge_pack.get("model_input_data") or []
         
         code_to_execute = None
         error_message = None
@@ -57,6 +58,7 @@ class PreprocessingCoderAgent(BaseAgent):
                 error_message=error_message,
                 iteration_type=iteration_type,
                 input_contract_notes=input_contract_notes,
+                model_input_data=model_input_data,
                 datafile_structure=datafile_structure,
             )
 
