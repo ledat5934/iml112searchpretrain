@@ -17,6 +17,7 @@ from .evidence_gathering_agent import EvidenceGatheringAgent
 from .comparison_agent import ComparisonAgent
 from .debug_agent import DebugAgent
 from .monolithic_coder_agent import MonolithicCoderAgent
+from .prompt_decider_agent import PromptDeciderAgent
 
 __all__ = [
     "BaseAgent",
@@ -36,4 +37,5 @@ __all__ = [
     "ComparisonAgent",
     "DebugAgent",
     "MonolithicCoderAgent",
+    "PromptDeciderAgent",
 ]

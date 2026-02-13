@@ -87,23 +87,26 @@ The following preprocessing code, including a function `preprocess_data(file_pat
         input_contract_notes: list[str] | None = None,
         datafile_structure: str | None = None,
         model_input_data: list[str] | None = None,
+        prompt_fields: Dict[str, Any] | None = None,
     ) -> str:
         """Build prompt to generate modeling code."""
         
         guideline = guideline or {}
         modeling_guideline = guideline.get('modeling', {})
+
+        prompt_fields = prompt_fields or {}
         
         # Add iteration-specific modeling guidance
-        iteration_guidance = self._get_iteration_guidance(iteration_type)
+        iteration_guidance = prompt_fields.get("iteration_guidance") or self._get_iteration_guidance(iteration_type)
         enhanced_guideline = json.dumps(modeling_guideline, indent=2)
         if iteration_guidance:
             enhanced_guideline += f"\n\n## ITERATION-SPECIFIC GUIDANCE:\n{iteration_guidance}"
 
         # Get data handling instruction based on iteration type
-        data_handling = self._get_data_handling_instruction(iteration_type)
+        data_handling = prompt_fields.get("data_handling_instruction") or self._get_data_handling_instruction(iteration_type)
 
-        input_contract_notes_section = ""
-        if input_contract_notes:
+        input_contract_notes_section = prompt_fields.get("input_contract_notes_section") or ""
+        if not input_contract_notes_section and input_contract_notes:
             lines = "\n".join(f"- {note}" for note in input_contract_notes if note)
             if lines:
                 input_contract_notes_section = (
@@ -112,8 +115,8 @@ The following preprocessing code, including a function `preprocess_data(file_pat
                     + "\n"
                 )
 
-        model_input_data_section = ""
-        if model_input_data:
+        model_input_data_section = prompt_fields.get("model_input_data_section") or ""
+        if not model_input_data_section and model_input_data:
             items = [x for x in model_input_data if x]
             if items:
                 model_input_data_section = (

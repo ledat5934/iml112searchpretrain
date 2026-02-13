@@ -56,7 +56,7 @@ IMPORTANT: DO NOT CREATE DUMMY DATA.
 15. **SPLIT STRATEGY**: Use a single train/validation split only. DO NOT use k-fold or cross-validation.
 16. **INPUT CONTRACT (MUST FOLLOW)**:
     - You MUST follow the "MODEL INPUT DATA CONTRACT" (if provided) and the input contract notes.
-    - Ensure `preprocess_data(file_paths: dict)` returns exactly the expected artifact(s) so the modeling code can consume them without adaptation hacks.
+    - Ensure `preprocess_data(file_paths: dict)` returns exactly the expected artifact(s) 
 17. **ABSOLUTE BAN: NO DUMMY / NO SYNTHETIC DATA (STRICT)**:
     - You MUST NOT generate, simulate, or fabricate ANY data under ANY condition (including "local testing only").
     - Do NOT add any code like:
@@ -64,7 +64,6 @@ IMPORTANT: DO NOT CREATE DUMMY DATA.
       * `os.makedirs(...)` to construct a fake dataset
       * `pd.DataFrame(...).to_csv(...)` to create missing input CSVs
       * writing parquet/images/audio/video as placeholders
-    - If any expected input file/folder does not exist, the script MUST fail loudly: print a clear error to stderr and `sys.exit(1)`.
     - Only read from the provided dataset paths. Never write into the dataset directory.
 
 ## CODE STRUCTURE:
@@ -119,6 +118,7 @@ if __name__ == "__main__":
         input_contract_notes: list[str] | None = None,
         model_input_data: list[str] | None = None,
         datafile_structure: str | None = None,
+        prompt_fields: Dict[str, Any] | None = None,
     ) -> str:
         """Build prompt to generate preprocessing code."""
 
@@ -126,8 +126,10 @@ if __name__ == "__main__":
         preprocessing_guideline = guideline.get('preprocessing', {})
         target_info = guideline.get("target_identification", {})
 
+        prompt_fields = prompt_fields or {}
+
         # Add iteration-specific preprocessing guidance
-        iteration_guidance = self._get_iteration_guidance(iteration_type)
+        iteration_guidance = prompt_fields.get("iteration_guidance") or self._get_iteration_guidance(iteration_type)
         enhanced_guideline = json.dumps(preprocessing_guideline, indent=2)
         if iteration_guidance:
             enhanced_guideline += f"\n\n## ITERATION-SPECIFIC GUIDANCE:\n{iteration_guidance}"
@@ -135,8 +137,12 @@ if __name__ == "__main__":
         # Get batch processing instruction and data return format based on iteration
         batch_instruction, data_format = self._get_batch_processing_config(iteration_type)
 
-        input_contract_notes_section = ""
-        if input_contract_notes:
+        # Allow PromptDeciderAgent to override these placeholders
+        batch_instruction = prompt_fields.get("batch_processing_instruction") or batch_instruction
+        data_format = prompt_fields.get("data_return_format") or data_format
+
+        input_contract_notes_section = prompt_fields.get("input_contract_notes_section") or ""
+        if not input_contract_notes_section and input_contract_notes:
             lines = "\n".join(f"- {note}" for note in input_contract_notes if note)
             if lines:
                 input_contract_notes_section = (
@@ -145,8 +151,8 @@ if __name__ == "__main__":
                     + "\n"
                 )
 
-        model_input_data_section = ""
-        if model_input_data:
+        model_input_data_section = prompt_fields.get("model_input_data_section") or ""
+        if not model_input_data_section and model_input_data:
             items = [x for x in model_input_data if x]
             if items:
                 model_input_data_section = (

@@ -49,6 +49,12 @@ class AssemblerAgent(BaseAgent):
         combined_code = preprocessing_code + "\n\n" + modeling_code
         submission_path = os.path.join(self.manager.output_folder, "submission.csv")
         error_message = None
+        decided_fields = {}
+        try:
+            decided_all = self.manager.get_prompt_fields(iteration_type)
+            decided_fields = (decided_all or {}).get("assembler", {}) or {}
+        except Exception:
+            decided_fields = {}
 
         for attempt in range(self.max_retries):
             logger.info(f"Assembly and execution attempt {attempt + 1}/{self.max_retries}...")
@@ -67,6 +73,7 @@ class AssemblerAgent(BaseAgent):
                 error_message=error_message,
                 iteration_type=iteration_type,
                 datafile_structure=datafile_structure,
+                prompt_fields=decided_fields,
             )
 
             # Save prompt under structured path

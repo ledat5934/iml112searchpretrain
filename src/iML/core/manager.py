@@ -30,6 +30,7 @@ from ..agents import (
     AssemblerAgent,
     ComparisonAgent,
     DebugAgent,
+    PromptDeciderAgent,
 )
 from ..agents.comparison_agent import IterationResultExtractor
 from ..llm import ChatLLMFactory
@@ -159,6 +160,12 @@ class Manager:
             manager=self,
             llm_config=self.config.guideline_generator,
         )
+        prompt_decider_llm = getattr(self.config, "prompt_decider_agent", None) or self.config.guideline_generator
+        self.prompt_decider_agent = PromptDeciderAgent(
+            config=config,
+            manager=self,
+            llm_config=prompt_decider_llm,
+        )
         self.preprocessing_coder_agent = PreprocessingCoderAgent(
             config=config,
             manager=self,
@@ -202,6 +209,40 @@ class Manager:
         self.task_schema = None
         self.task_context = None
         self.knowledge_packs = {}
+        self.prompt_fields_by_iteration: Dict[str, Any] = {}
+
+    def get_prompt_fields(self, iteration_type: str | None = None) -> Dict[str, Any]:
+        """
+        Get (and lazily build) prompt field overrides for a given iteration.
+        Output is a JSON-like dict with keys: preprocessing/modeling/assembler.
+        """
+        key = iteration_type or "default"
+        existing = (self.prompt_fields_by_iteration or {}).get(key)
+        if existing:
+            return existing
+
+        # Build using PromptDeciderAgent (best-effort; falls back to empty dict)
+        knowledge_pack = {}
+        try:
+            if hasattr(self, "knowledge_packs"):
+                knowledge_pack = self.knowledge_packs.get(key, {}) or {}
+        except Exception:
+            knowledge_pack = {}
+
+        try:
+            decided = self.prompt_decider_agent(
+                iteration_type=iteration_type or "default",
+                guideline=getattr(self, "guideline", {}) or {},
+                knowledge_pack=knowledge_pack,
+            )
+            if isinstance(decided, dict) and "error" not in decided:
+                self.prompt_fields_by_iteration[key] = decided
+                return decided
+        except Exception as e:
+            logger.warning(f"PromptDeciderAgent failed: {e}")
+
+        self.prompt_fields_by_iteration[key] = {}
+        return {}
 
     # ------------------------------------------------------------------
     # Ablation helpers

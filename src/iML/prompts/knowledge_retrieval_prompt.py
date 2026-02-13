@@ -47,7 +47,7 @@ Return a SINGLE JSON object with the following fields (add more if needed, but k
     "notes": "..."
   }},
   "model_input_data": [
-    "dataframe|numpy_arrays|dataloader|data_yaml_path|hf_dataset|file_paths_only"
+    "dataframe|numpy_arrays|dataloader|data_yaml_path|hf_dataset|file_paths_only|..."(only output 1)
   ],
   "input_contract_notes": [
     "Short, concrete constraints about what preprocess_data() MUST return to be consumable by the chosen model/framework."

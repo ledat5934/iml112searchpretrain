@@ -54,7 +54,16 @@ Based on the context above, generate the complete and corrected Python code. The
 ## FINAL, CORRECTED CODE:
 """
 
-    def build(self, original_code: str, output_path: str, description: Dict, error_message: str = None, iteration_type: str = None, datafile_structure: str | None = None) -> str:
+    def build(
+        self,
+        original_code: str,
+        output_path: str,
+        description: Dict,
+        error_message: str = None,
+        iteration_type: str = None,
+        datafile_structure: str | None = None,
+        prompt_fields: Dict[str, Any] | None = None,
+    ) -> str:
         """Build prompt to assemble or fix code."""
 
         retry_context = ""
@@ -87,7 +96,8 @@ The code above failed with the following error.
 """
 
         # Add iteration-specific assembly guidance
-        iteration_guidance = self._get_iteration_guidance(iteration_type)
+        prompt_fields = prompt_fields or {}
+        iteration_guidance = prompt_fields.get("iteration_guidance") or self._get_iteration_guidance(iteration_type)
         if iteration_guidance:
             additional_context = f"\n\n## ITERATION-SPECIFIC CONTEXT:\n{iteration_guidance}"
             retry_context += additional_context

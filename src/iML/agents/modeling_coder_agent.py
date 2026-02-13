@@ -43,6 +43,12 @@ class ModelingCoderAgent(BaseAgent):
             knowledge_pack = self.manager.knowledge_packs.get(knowledge_key, {}) or {}
         input_contract_notes = knowledge_pack.get("input_contract_notes") or []
         model_input_data = knowledge_pack.get("model_input_data") or []
+        decided_fields = {}
+        try:
+            decided_all = self.manager.get_prompt_fields(iteration_type)
+            decided_fields = (decided_all or {}).get("modeling", {}) or {}
+        except Exception:
+            decided_fields = {}
         
         if not preprocessing_code:
             logger.error("Preprocessing code not found. Cannot continue.")
@@ -57,6 +63,7 @@ class ModelingCoderAgent(BaseAgent):
             input_contract_notes=input_contract_notes,
             datafile_structure=datafile_structure,
             model_input_data=model_input_data,
+            prompt_fields=decided_fields,
         )
         
         # Save prompt for modeling

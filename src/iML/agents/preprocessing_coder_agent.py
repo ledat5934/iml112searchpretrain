@@ -43,6 +43,12 @@ class PreprocessingCoderAgent(BaseAgent):
             knowledge_pack = self.manager.knowledge_packs.get(knowledge_key, {}) or {}
         input_contract_notes = knowledge_pack.get("input_contract_notes") or []
         model_input_data = knowledge_pack.get("model_input_data") or []
+        decided_fields = {}
+        try:
+            decided_all = self.manager.get_prompt_fields(iteration_type)
+            decided_fields = (decided_all or {}).get("preprocessing", {}) or {}
+        except Exception:
+            decided_fields = {}
         
         code_to_execute = None
         error_message = None
@@ -60,6 +66,7 @@ class PreprocessingCoderAgent(BaseAgent):
                 input_contract_notes=input_contract_notes,
                 model_input_data=model_input_data,
                 datafile_structure=datafile_structure,
+                prompt_fields=decided_fields,
             )
 
             # Save prompt under structured path
