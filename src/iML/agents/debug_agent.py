@@ -25,7 +25,7 @@ class DebugAgent(BaseAgent):
     applies code patches, runs, and loops up to N rounds.
     """
 
-    def __init__(self, config, manager, max_rounds: int = 5):
+    def __init__(self, config, manager, max_rounds: int = 1):
         super().__init__(config=config, manager=manager)
         self.max_rounds = max_rounds
         self.logger = logging.getLogger(__name__)
