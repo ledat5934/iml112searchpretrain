@@ -34,6 +34,12 @@ class DebugAgent(BaseAgent):
             """# Error report
 {bug}
 
+# Phase context
+PHASE_NAME: {phase_name}
+
+# Phase requirements
+{phase_requirements}
+
 # Dataset file structure (SUMMARY)
 {datafile_structure}
 
@@ -51,6 +57,12 @@ class DebugAgent(BaseAgent):
         self.BUG_REFINE_INSTR = (
             """# Task description
 {task_description}
+
+# Phase context
+PHASE_NAME: {phase_name}
+
+# Phase requirements
+{phase_requirements}
 
 # Dataset file structure (SUMMARY)
 {datafile_structure}
@@ -79,6 +91,56 @@ class DebugAgent(BaseAgent):
 - Do not use exit() function in the refined Python code."""
         )
 
+    def _get_phase_requirements(self, phase_name: str, require_submission: bool = False) -> str:
+        """
+        Short, phase-specific rules to reduce wrong fixes (e.g., writing empty submission on failure).
+        Keep concise to avoid token bloat.
+        """
+        p = (phase_name or "").lower().strip()
+
+        common = [
+            "- Fix the root cause; do not add workaround hacks.",
+            "- Do NOT create dummy/synthetic data under any condition.",
+            "- If an exception occurs in main: print to stderr and exit non-zero (sys.exit(1)). Do NOT swallow errors.",
+        ]
+
+        if p == "preprocessing":
+            return "\n".join(
+                [
+                    "PREPROCESSING PHASE REQUIREMENTS:",
+                    "- The script must define preprocess_data(file_paths: dict) and return the contract-required artifacts.",
+                    "- Do NOT write submission.csv in preprocessing phase.",
+                    *common,
+                ]
+            )
+
+        if p in ("assemble", "assembler"):
+            return "\n".join(
+                [
+                    "ASSEMBLE PHASE REQUIREMENTS:",
+                    "- The script MUST write submission.csv to the required absolute output path (see Output constraint).",
+                    "- The submission MUST NOT be empty/header-only. Never write an empty placeholder submission on failure.",
+                    "- If submission validation fails, exit non-zero to trigger debugging; do not silently continue.",
+                    *common,
+                ]
+            )
+
+        if p == "monolithic":
+            return "\n".join(
+                [
+                    "MONOLITHIC PHASE REQUIREMENTS:",
+                    "- The script is end-to-end and MUST write submission.csv to the required absolute output path (see Output constraint).",
+                    "- The submission MUST NOT be empty/header-only. Never write an empty placeholder submission on failure.",
+                    "- If submission validation fails, exit non-zero to trigger debugging; do not silently continue.",
+                    *common,
+                ]
+            )
+
+        lines = ["PHASE REQUIREMENTS:", *common]
+        if require_submission:
+            lines.insert(1, "- This phase requires a valid submission.csv artifact (non-empty).")
+        return "\n".join(lines)
+
     # ── LLM step A: Summarize error (no search) ─────────────────────
     def _get_description(self) -> dict:
         """Return description_analysis from manager or load from states if missing."""
@@ -96,7 +158,15 @@ class DebugAgent(BaseAgent):
             pass
         return {}
 
-    def _llm_bug_summary(self, stderr: str, filename: str, phase_name: str, attempt_index: int, datafile_structure: Optional[str] = None) -> str:
+    def _llm_bug_summary(
+        self,
+        stderr: str,
+        filename: str,
+        phase_name: str,
+        attempt_index: int,
+        datafile_structure: Optional[str] = None,
+        require_submission: bool = False,
+    ) -> str:
         # Choose an LLM config available (reuse assembler)
         llm_config = getattr(self.manager.assembler_agent, 'llm_config', None)
         if llm_config is None:
@@ -116,9 +186,12 @@ class DebugAgent(BaseAgent):
                 expected_abs = expected_name
             submission_path_note = f"If a submission file is produced, it MUST be saved to this absolute path: {expected_abs}."
 
+        phase_requirements = self._get_phase_requirements(phase_name, require_submission=require_submission)
         prompt = self.BUG_SUMMARY_INSTR.format(
             bug=stderr,
             filename=filename,
+            phase_name=phase_name,
+            phase_requirements=phase_requirements,
             datafile_structure=datafile_structure or "N/A",
             description_json=description_json,
             submission_path_note=submission_path_note,
@@ -148,7 +221,16 @@ class DebugAgent(BaseAgent):
             return m.group(1).strip()
         return None
 
-    def _llm_refine_code(self, task_description: str, code: str, bug_summary: str, phase_name: str, attempt_index: int, datafile_structure: Optional[str] = None) -> tuple[str, str, str]:
+    def _llm_refine_code(
+        self,
+        task_description: str,
+        code: str,
+        bug_summary: str,
+        phase_name: str,
+        attempt_index: int,
+        datafile_structure: Optional[str] = None,
+        require_submission: bool = False,
+    ) -> tuple[str, str, str]:
         # Pull description from manager to include context
         description = self._get_description() or {}
         try:
@@ -166,8 +248,11 @@ class DebugAgent(BaseAgent):
                 expected_abs = expected_name
             submission_path_note = f"If you produce a submission file, you MUST save it to this absolute path: {expected_abs}."
 
+        phase_requirements = self._get_phase_requirements(phase_name, require_submission=require_submission)
         prompt_text = self.BUG_REFINE_INSTR.format(
             task_description=task_description or "",
+            phase_name=phase_name,
+            phase_requirements=phase_requirements,
             datafile_structure=datafile_structure or "N/A",
             description_json=description_json,
             code=code,
@@ -327,7 +412,14 @@ class DebugAgent(BaseAgent):
             # The bug summary must be stored with the code that produced the error
             bug_attempt_index = attempt + (round_idx - 1)  # first round -> current failed attempt
             # 1) Summarize bug into the failed attempt folder
-            bug_summary = self._llm_bug_summary(stderr, filename, phase_name, bug_attempt_index, datafile_structure=datafile_structure)
+            bug_summary = self._llm_bug_summary(
+                stderr,
+                filename,
+                phase_name,
+                bug_attempt_index,
+                datafile_structure=datafile_structure,
+                require_submission=require_submission,
+            )
             # 2) Refine code for the next attempt
             refined_attempt_index = bug_attempt_index + 1
             refined, raw_text, prompt_text = self._llm_refine_code(
@@ -337,6 +429,7 @@ class DebugAgent(BaseAgent):
                 phase_name,
                 refined_attempt_index,
                 datafile_structure=datafile_structure,
+                require_submission=require_submission,
             )
             self.logger.detail(
                 f"[DEBUG_AGENT] round={round_idx} phase={phase_name} refined_attempt_index={refined_attempt_index} "
