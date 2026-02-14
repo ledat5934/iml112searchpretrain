@@ -71,6 +71,7 @@ def get_directory_structure(
     root_dir: str,
     sample_rows: int = 5,
     include_csv_summary: bool = True,
+    max_chars: int | None = 2000,
 ) -> str:
     """
     Generates a string representing the directory structure as a tree 
@@ -84,6 +85,8 @@ def get_directory_structure(
     Args:
         root_dir (str): Path to the root directory.
         sample_rows (int): Number of sample rows to display from each CSV file summary.
+        max_chars (int | None): If set, truncate the returned string to at most this many characters.
+            Use None to disable truncation.
 
     Returns:
         str: A string containing the directory tree and CSV summary.
@@ -139,4 +142,14 @@ def get_directory_structure(
 
     # --- Part 3: Combine and return the final string ---
     final_output = "\n".join(tree_lines) + "\n".join(summary_lines)
+
+    # Truncate to keep prompts small (while still preserving a tail context)
+    if max_chars is not None and max_chars > 0 and len(final_output) > max_chars:
+        # Keep head + tail to preserve both top-level layout and any ending summary lines.
+        head_len = max_chars // 2
+        tail_len = max_chars - head_len
+        omitted = len(final_output) - max_chars
+        marker = f"\n...[TRUNCATED {omitted} chars to fit max_chars={max_chars}]...\n"
+        final_output = final_output[:head_len] + marker + final_output[-tail_len:]
+
     return final_output

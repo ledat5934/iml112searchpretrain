@@ -25,6 +25,12 @@ def main() -> int:
         action="store_true",
         help="Skip CSV summaries (no pandas required).",
     )
+    parser.add_argument(
+        "--max-chars",
+        type=int,
+        default=2000,
+        help="Maximum characters to print (use 0 to disable truncation).",
+    )
     args = parser.parse_args()
 
     dataset_path = Path(args.path)
@@ -37,6 +43,7 @@ def main() -> int:
         str(dataset_path),
         sample_rows=args.sample_rows,
         include_csv_summary=not args.no_csv_summary,
+        max_chars=None if args.max_chars == 0 else args.max_chars,
     )
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")

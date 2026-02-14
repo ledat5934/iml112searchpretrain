@@ -100,6 +100,8 @@ class Manager:
         self.output_folder = output_folder
         self.config = config
         self.ablation_variant = ablation_variant
+        # Provide an instance logger for prompts/agents that expect manager.logger
+        self.logger = logging.getLogger(__name__)
 
         # Validate paths
         for path, name in [(input_data_folder, "input_data_folder")]:

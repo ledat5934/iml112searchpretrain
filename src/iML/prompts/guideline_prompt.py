@@ -1,8 +1,11 @@
 # src/iML/prompts/guideline_prompt.py
 import json
+import logging
 from typing import Dict, Any
 
 from .base_prompt import BasePrompt
+
+logger = logging.getLogger(__name__)
 
 def _create_variables_summary(variables: dict) -> dict:
     """Create a concise summary for variables in the profile."""
@@ -375,7 +378,8 @@ IMPORTANT: Ensure the generated JSON is perfectly valid.
         try:
             parsed_response = json.loads(response.strip().replace("```json", "").replace("```", ""))
         except json.JSONDecodeError as e:
-            self.manager.logger.error(f"Failed to parse JSON from LLM response for guideline: {e}")
+            # Use local logger; manager.logger may not exist in some environments/checkpoints
+            logger.error(f"Failed to parse JSON from LLM response for guideline: {e}")
             parsed_response = {"error": "Invalid JSON response from LLM", "raw_response": response}
         
         self.manager.save_and_log_states(
