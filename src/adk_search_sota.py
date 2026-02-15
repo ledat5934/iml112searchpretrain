@@ -45,7 +45,7 @@ MODEL_RETRIEVAL_INSTR = """# Competition
 - If a model is from a library (torchvision, timm, ultralytics, sklearn, etc.) and does NOT require an HF URL, set source_type="library" and leave model_link empty.
 - Search for RECENT and ACTIVELY MAINTAINED models.
 - Prefer models with good documentation and example usage.
-- Prefer small and medium-sized models.
+- Prefer medium-sized models.
 - The example code should be concise and simple.
 - You must provide an example code, i.e., do not just mention GitHubs or papers.
 
