@@ -12,7 +12,7 @@ class KnowledgeRetrievalPrompt(BasePrompt):
 
     def default_template(self) -> str:
         return """You are an expert ML engineer. Produce an ITERATION-SPECIFIC KNOWLEDGE PACK to guide planning.
-This knowledge pack should summarize best practices and pitfalls for the given task context and iteration type.
+This knowledge pack should summarize best practices and pitfalls for the given task context and iteration type, and appropriate with model chosen.
 
 ITERATION TYPE: {iteration_type}
 
@@ -25,12 +25,12 @@ ITERATION TYPE: {iteration_type}
 ```json
 {model_suggestions_json}
 ```
-
+(Your knowledge pack should be appropriate with the model chosen)
 ## ARCHITECTURE PATTERNS (JSON) - optional
 ```json
 {architecture_suggestions_json}
 ```
-
+(Your knowledge pack should be appropriate with the architecture chosen)
 ## OUTPUT REQUIREMENTS
 Return a SINGLE JSON object with the following fields (add more if needed, but keep it concise):
 {{
@@ -77,6 +77,7 @@ IMPORTANT:
     - "dataloader": preprocessing returns PyTorch DataLoaders / Dataset objects.
     - "data_yaml_path": preprocessing writes a `data.yaml` file and returns its path for frameworks like Ultralytics.
     - "file_paths_only": preprocessing returns file paths/manifests, modeling loads lazily/batch-wise.
+- The preprocessing_recommendations should be appropriate with the chosen model and task.
 """
 
     def build(
