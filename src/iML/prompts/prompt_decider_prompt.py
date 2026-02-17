@@ -51,7 +51,8 @@ Return ONLY valid JSON (no markdown, no code fences) with this schema:
     "model_input_data_section": "Empty string or ready-to-insert section. Replaces {{model_input_data_section}}.",
     "batch_processing_instruction": "1-3 lines. Replaces preprocessing placeholder {{batch_processing_instruction}}.",
     "data_return_format": "A single line that MUST start with '5.' describing preprocess_data() return. Replaces {{data_return_format}}.",
-    "iteration_guidance": "Short guidance appended under '## ITERATION-SPECIFIC GUIDANCE' (preprocessing)."
+    "iteration_guidance": "Short guidance appended under '## ITERATION-SPECIFIC GUIDANCE' (preprocessing).",
+    "code_structure_section": "A ready-to-insert code skeleton block for preprocessing. It should include preprocess_data(file_paths: dict) and a main try/except that sys.exit(1) on error. This will replace the preprocessing CODE STRUCTURE section."
   }},
   "modeling": {{
     "data_handling_instruction": "Ready-to-insert section describing exactly how modeling consumes preprocess_data() output. Replaces {{data_handling_instruction}}.",
@@ -71,7 +72,8 @@ Return ONLY valid JSON (no markdown, no code fences) with this schema:
     "model_input_data_section": "## MODEL INPUT DATA CONTRACT (from Knowledge Retrieval)\\n- dataframe\\n",
     "batch_processing_instruction": "Because the model input is dataframe, the batch processing instruction is: IMPORTANT: Load entire dataset into memory for traditional ML algorithms.",
     "data_return_format": "5. Create a function `preprocess_data()` that takes file_paths and returns (X_train, X_val, X_test, y_train, y_val, y_test) as in-memory DataFrames/arrays.",
-    "iteration_guidance": "- Keep preprocessing minimal and deterministic.\\n- Use a single holdout split (no k-fold)."
+    "iteration_guidance": "- Keep preprocessing minimal and deterministic.\\n- Use a single holdout split (no k-fold).",
+    "code_structure_section": "```python\\n# import necessary libraries\\nimport pandas as pd\\nimport numpy as np\\nfrom sklearn.model_selection import train_test_split\\nimport sys\\nimport os\\n\\ndef preprocess_data(file_paths: dict):\\n    \\\"\\\"\\\"Preprocess data according to the guideline and contracts.\\\"\\\"\\\"\\n    # TODO: implement\\n    return None\\n\\nif __name__ == \\\"__main__\\\":\\n    try:\\n        file_paths = [...]\\n        out = preprocess_data(file_paths)\\n        print(\\\"Preprocessing finished.\\\")\\n    except Exception as e:\\n        print(f\\\"An error occurred during preprocessing test: {e}\\\", file=sys.stderr)\\n        sys.exit(1)\\n```"
   }},
   "modeling": {{
     "data_handling_instruction": "## IMPORTANT DATA HANDLING\\nCall `X_train, X_val, X_test, y_train, y_val, y_test = preprocess_data(file_paths)` and train a model on X_train/y_train. Evaluate on X_val/y_val. Predict on X_test.",

@@ -67,46 +67,36 @@ IMPORTANT: DO NOT CREATE DUMMY DATA.
     - Only read from the provided dataset paths. Never write into the dataset directory.
 
 ## CODE STRUCTURE:
-```python
-# import necessary libraries
-import pandas as pd
-import numpy as np
-from sklearn.model_selection import train_test_split
-import sys
-import os
-
-def preprocess_data(file_paths: dict):
-    \"\"\"
-    Preprocess data according to guidelines.
-    Preprocesses data and returns batch generators.
-    Args:
-        file_paths: A dictionary of file paths for data splits.
-    Returns:
-        A tuple of generators, one for each data split (e.g., (train_gen, val_gen, test_gen)).
-    \"\"\"
-    # Your preprocessing code here
-    
-    # Placeholder return
-    train_generator, val_generator, test_generator = (None, None, None)
-    
-    return train_generator, val_generator, test_generator
-
-# Test the function
-if __name__ == "__main__":
-    try:
-        # This assumes the script is run from a directory where it can access the paths
-        file_paths = {file_paths_main}
-        train_gen, val_gen, test_gen = preprocess_data(file_paths)
-        print("Generators initialized.")
-
-        
-        print("\\nPreprocessing script and generator test executed successfully!")
-
-    except Exception as e:
-        print(f"An error occurred during preprocessing test: {{e}}", file=sys.stderr)
-        sys.exit(1)
-````
+{code_structure_section}
 """
+
+    def _default_code_structure(self, description: Dict[str, Any]) -> str:
+        """Fallback code skeleton for preprocessing when PromptDecider does not provide one."""
+        file_paths_main = description.get("link to the dataset", [])
+        return (
+            "```python\n"
+            "# import necessary libraries\n"
+            "import pandas as pd\n"
+            "import numpy as np\n"
+            "from sklearn.model_selection import train_test_split\n"
+            "import sys\n"
+            "import os\n"
+            "\n"
+            "def preprocess_data(file_paths: dict):\n"
+            "    \"\"\"Preprocess data according to guidelines and contracts.\"\"\"\n"
+            "    # Your preprocessing code here\n"
+            "    return None\n"
+            "\n"
+            "if __name__ == \"__main__\":\n"
+            "    try:\n"
+            f"        file_paths = {repr(file_paths_main)}\n"
+            "        _ = preprocess_data(file_paths)\n"
+            "        print(\"Preprocessing finished.\")\n"
+            "    except Exception as e:\n"
+            "        print(f\"An error occurred during preprocessing test: {e}\", file=sys.stderr)\n"
+            "        sys.exit(1)\n"
+            "```\n"
+        )
 
     def build(
         self,
@@ -176,6 +166,7 @@ if __name__ == "__main__":
             data_return_format=data_format,
             input_contract_notes_section=input_contract_notes_section,
             model_input_data_section=model_input_data_section,
+            code_structure_section=(prompt_fields.get("code_structure_section") if (prompt_fields or {}).get("code_structure_section") else self._default_code_structure(description)),
             datafile_structure=datafile_structure or "N/A",
         )
 
