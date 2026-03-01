@@ -23,6 +23,7 @@ IMPORTANT: DO NOT CREATE DUMMY DATA.
 - Input: {input_desc}
 - Output: {output_desc}
 - Data files: {data_file_desc}
+- File paths: {file_paths} (LOAD DATA FROM THESE PATHS)
 
 ## DATAFILE STRUCTURE (SUMMARY)
 {datafile_structure}
@@ -192,6 +193,8 @@ The previously generated code failed with an error.
 {truncated_error}
 ```
 
+### Dataset Paths (from description analyzer):
+{dataset_paths_json}
 
 ## FIX INSTRUCTIONS:
 1. Analyze the error message and the previous code carefully.
@@ -208,6 +211,7 @@ Generate the corrected Python code:
             description_json = json.dumps(description, indent=2, ensure_ascii=False)
         except Exception:
             description_json = json.dumps(description, indent=2)
+        prompt += f"\n\n## FULL DESCRIPTION ANALYSIS (JSON)\n```json\n{description_json}\n```\n"
 
         self.manager.save_and_log_states(prompt, "preprocessing_coder_prompt.txt")
         return prompt
