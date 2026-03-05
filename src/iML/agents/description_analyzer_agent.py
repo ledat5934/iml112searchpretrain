@@ -59,7 +59,14 @@ class DescriptionAnalyzerAgent(BaseAgent):
             description = desc_file.read()
 
         # Step 2: Get directory structure
-        directory_structure = get_directory_structure(dataset_path)
+        # Keep this compact and focused on file/folder names for better link_to_dataset accuracy.
+        # Avoid CSV row samples here to preserve more of the tree within the max_chars budget.
+        directory_structure = get_directory_structure(
+            dataset_path,
+            include_csv_summary=False,
+            sample_rows=0,
+            max_chars=2000,
+        )
 
         # Step 3: Build the prompt
         prompt = self.prompt_handler.build(

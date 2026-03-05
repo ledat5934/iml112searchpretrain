@@ -9,6 +9,12 @@ from tqdm import tqdm
 from ydata_profiling import ProfileReport
 
 from .base_agent import BaseAgent
+from ..utils.basic_file_profiler import (
+    BasicProfilerConfig,
+    build_inventory_by_extension,
+    collect_sample_files_by_dir_extension,
+    profile_file_basic,
+)
 
 # Configure logger
 logger = logging.getLogger(__name__)
@@ -39,6 +45,34 @@ class ProfilingAgent(BaseAgent):
 
         ds_name = description_analysis.get('name', 'unnamed_dataset')
         logger.info(f"Profiling dataset: {ds_name}")
+
+        # ------------------------------------------------------------------
+        # Basic multi-format profiling (lightweight, extension-based sampling)
+        # Rule: within each directory, for each extension, profile 1 representative file.
+        # This does NOT depend on link_to_dataset and is safe for non-CSV datasets.
+        # ------------------------------------------------------------------
+        dataset_root = Path(getattr(self.manager, "input_data_folder", "") or "")
+        basic_inventory = {}
+        basic_profiles = []
+        basic_sampling_meta = {}
+        try:
+            if dataset_root.is_dir():
+                basic_inventory = build_inventory_by_extension(
+                    dataset_root,
+                    skip_filenames={"description.txt"},
+                )
+                sampled_files, basic_sampling_meta = collect_sample_files_by_dir_extension(
+                    dataset_root,
+                    cfg=BasicProfilerConfig(max_files_per_dir_ext=1),
+                    skip_filenames={"description.txt"},
+                )
+                for f in sampled_files:
+                    basic_profiles.append(profile_file_basic(f, root_dir=dataset_root))
+            else:
+                basic_sampling_meta = {"notes": [f"input_data_folder is not a directory: {dataset_root}"]}
+        except Exception as e:
+            logger.warning(f"Basic file profiling failed: {e}")
+            basic_sampling_meta = {"notes": [f"basic_file_profiling_failed: {e}"]}
 
         # Check existence of data files
         paths_list = description_analysis.get("link to the dataset", [])
@@ -71,6 +105,9 @@ class ProfilingAgent(BaseAgent):
         
         # Combine back into a single object
         profiling_result = {
+            "basic_inventory": basic_inventory,
+            "basic_sampling_meta": basic_sampling_meta,
+            "basic_profiles": basic_profiles,
             "summaries": all_summaries,
             "profiles": all_profiles,
             "id_format_analysis": id_format_analysis

@@ -85,7 +85,6 @@ PHASE_NAME: {phase_name}
 - Do not remove subsampling if exists.
 - Provide the improved, self-contained Python script again.
 - There should be no additional headings or text in your response.
-- Remember to print a line in the code with 'Final Validation Performance: {final_validation_score}' so we can parse performance.
 - The code should be a single-file python program that is self-contained and can be executed as-is.
 - Your response should only contain a single code block.
 - Do not use exit() function in the refined Python code."""

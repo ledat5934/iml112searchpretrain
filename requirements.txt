@@ -192,3 +192,4 @@ tokenizers>=0.19
 safetensors>=0.4.0
 protobuf
 tf-keras
+pillow
