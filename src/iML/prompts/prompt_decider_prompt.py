@@ -73,7 +73,7 @@ Return ONLY valid JSON (no markdown, no code fences) with this schema:
     "batch_processing_instruction": "Because the model input is dataframe, the batch processing instruction is: IMPORTANT: Load entire dataset into memory for traditional ML algorithms.",
     "data_return_format": "5. Create a function `preprocess_data()` that takes file_paths and returns (X_train, X_val, X_test, y_train, y_val, y_test) as in-memory DataFrames/arrays.",
     "iteration_guidance": "- Keep preprocessing minimal and deterministic.\\n- Use a single holdout split (no k-fold).",
-    "code_structure_section": "```python\\n# import necessary libraries\\nimport pandas as pd\\nimport numpy as np\\nfrom sklearn.model_selection import train_test_split\\nimport sys\\nimport os\\n\\ndef preprocess_data(file_paths: dict):\\n    \\\"\\\"\\\"Preprocess data according to the guideline and contracts.\\\"\\\"\\\"\\n    # TODO: implement\\n    return None\\n\\nif __name__ == \\\"__main__\\\":\\n    try:\\n        file_paths = [...]\\n        out = preprocess_data(file_paths)\\n        print(\\\"Preprocessing finished.\\\")\\n    except Exception as e:\\n        print(f\\\"An error occurred during preprocessing test: {e}\\\", file=sys.stderr)\\n        sys.exit(1)\\n```"
+    "code_structure_section": "```python\\n# import necessary libraries\\nimport pandas as pd\\nimport numpy as np\\nfrom sklearn.model_selection import train_test_split\\nimport sys\\nimport os\\n\\ndef preprocess_data(file_paths: dict):\\n    \\\"\\\"\\\"Preprocess data according to the guideline and contracts.\\\"\\\"\\\"\\n    # TODO: implement\\n    return None\\n\\nif __name__ == \\\"__main__\\\":\\n    try:\\n        file_paths = [...]\\n        out = preprocess_data(file_paths)\\n        print(\\\"Preprocessing finished.\\\")\\n    except Exception as e:\\n        print(f\\\"An error occurred during preprocessing test: {{e}}\\\", file=sys.stderr)\\n        sys.exit(1)\\n```"
   }},
   "modeling": {{
     "data_handling_instruction": "## IMPORTANT DATA HANDLING\\nCall `X_train, X_val, X_test, y_train, y_val, y_test = preprocess_data(file_paths)` and train a model on X_train/y_train. Evaluate on X_val/y_val. Predict on X_test.",
@@ -101,12 +101,18 @@ Return ONLY valid JSON (no markdown, no code fences) with this schema:
         guideline: Optional[Dict[str, Any]] = None,
         knowledge_pack: Optional[Dict[str, Any]] = None,
     ) -> str:
-        return self.template.format(
+        class _SafeDict(dict):
+            def __missing__(self, key: str) -> str:
+                # Keep unknown placeholders as literals instead of crashing.
+                return "{" + key + "}"
+
+        values = _SafeDict(
             iteration_type=iteration_type or "unknown",
             description_json=json.dumps(description_analysis or {}, indent=2, ensure_ascii=False),
             guideline_json=json.dumps(guideline or {}, indent=2, ensure_ascii=False),
             knowledge_pack_json=json.dumps(knowledge_pack or {}, indent=2, ensure_ascii=False),
         )
+        return self.template.format_map(values)
 
     def parse(self, response: str) -> Dict[str, Any]:
         try:
