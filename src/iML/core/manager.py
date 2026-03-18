@@ -16,6 +16,7 @@ from datetime import datetime
 from ..agents import (
     DescriptionAnalyzerAgent,
     ProfilingAgent,
+    ProfilingLLMAgent,
     ProfilingSummarizerAgent,
     ModelRetrieverAgent,
     ArchitectureRetrieverAgent,
@@ -119,6 +120,12 @@ class Manager:
         self.profiling_agent = ProfilingAgent(
             config=config,
             manager=self,
+        )
+        profiling_llm_cfg = getattr(self.config, "profiling_llm_agent", None) or self.config.guideline_generator
+        self.profiling_llm_agent = ProfilingLLMAgent(
+            config=config,
+            manager=self,
+            llm_config=profiling_llm_cfg,
         )
         self.profiling_summarizer_agent = ProfilingSummarizerAgent(
             config=config,

@@ -11,3 +11,4 @@ from .knowledge_retrieval_prompt import KnowledgeRetrievalPrompt
 from .error_triage_prompt import ErrorTriagePrompt
 from .evidence_gathering_prompt import EvidenceGatheringPrompt
 from .prompt_decider_prompt import PromptDeciderPrompt
+from .profiling_llm_prompt import ProfilingLLMPrompt

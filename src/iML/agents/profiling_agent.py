@@ -9,6 +9,7 @@ from tqdm import tqdm
 from ydata_profiling import ProfileReport
 
 from .base_agent import BaseAgent
+from .profiling_llm_agent import ProfilingLLMAgent
 from ..utils.basic_file_profiler import (
     BasicProfilerConfig,
     build_inventory_by_extension,
@@ -74,6 +75,27 @@ class ProfilingAgent(BaseAgent):
             logger.warning(f"Basic file profiling failed: {e}")
             basic_sampling_meta = {"notes": [f"basic_file_profiling_failed: {e}"]}
 
+        # ------------------------------------------------------------------
+        # B2: LLM-generated profiling script under a strict contract
+        # ------------------------------------------------------------------
+        llm_profiling = {}
+        try:
+            profiler = getattr(self.manager, "profiling_llm_agent", None)
+            if profiler is not None and isinstance(profiler, ProfilingLLMAgent):
+                llm_profiling = profiler(
+                    dataset_root=str(dataset_root),
+                    basic_inventory=basic_inventory or {},
+                    basic_profiles=basic_profiles or [],
+                    attempt=1,
+                )
+            else:
+                llm_profiling = {"skipped": True, "reason": "profiling_llm_agent_not_initialized"}
+        except Exception as e:
+            llm_profiling = {"error": f"profiling_llm_failed: {e}"}
+
+        # Deterministic meta-features (rule-based) built from profiling signals
+        Fmeta = self._build_meta_features(basic_inventory=basic_inventory, llm_profiling=llm_profiling)
+
         # Check existence of data files
         paths_list = description_analysis.get("link to the dataset", [])
         if not isinstance(paths_list, list):
@@ -108,6 +130,8 @@ class ProfilingAgent(BaseAgent):
             "basic_inventory": basic_inventory,
             "basic_sampling_meta": basic_sampling_meta,
             "basic_profiles": basic_profiles,
+            "llm_profiling": llm_profiling,
+            "Fmeta": Fmeta,
             "summaries": all_summaries,
             "profiles": all_profiles,
             "id_format_analysis": id_format_analysis
@@ -123,6 +147,53 @@ class ProfilingAgent(BaseAgent):
         
         # Return aggregated results
         return profiling_result
+
+    def _build_meta_features(self, *, basic_inventory: Dict[str, Any], llm_profiling: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Deterministic (rule-based) meta-features.
+        This should be lightweight and robust even if LLM profiling fails.
+        """
+        inv = basic_inventory or {}
+        counts = (inv.get("counts_by_ext") or {}) if isinstance(inv, dict) else {}
+        counts_norm = {str(k).lower(): int(v) for k, v in (counts or {}).items() if v is not None}
+
+        has_images = any(counts_norm.get(ext, 0) > 0 for ext in [".jpg", ".jpeg", ".png", ".bmp"])
+        has_audio = counts_norm.get(".wav", 0) > 0
+        has_tabular = any(counts_norm.get(ext, 0) > 0 for ext in [".csv", ".tsv", ".parquet", ".xlsx", ".xls", ".json"])
+        has_text = counts_norm.get(".txt", 0) > 0 or counts_norm.get(".jsonl", 0) > 0
+
+        modalities = []
+        if has_tabular:
+            modalities.append("tabular")
+        if has_images:
+            modalities.append("image")
+        if has_audio:
+            modalities.append("audio")
+        if has_text and "tabular" not in modalities:
+            modalities.append("text")
+
+        # Pull candidate artifacts from LLM profiling signals if present
+        signals = {}
+        try:
+            signals = ((llm_profiling or {}).get("result") or {}).get("signals") or {}
+        except Exception:
+            signals = {}
+
+        def _as_list(x):
+            return x if isinstance(x, list) else []
+
+        return {
+            "modalities": modalities,
+            "has_images": bool(has_images),
+            "has_audio": bool(has_audio),
+            "has_tabular": bool(has_tabular),
+            "has_text": bool(has_text),
+            "counts_by_ext": counts_norm,
+            "candidate_train_files": _as_list(signals.get("candidate_train_files")),
+            "candidate_test_files": _as_list(signals.get("candidate_test_files")),
+            "candidate_submission_files": _as_list(signals.get("candidate_submission_files")),
+            "notes": _as_list(signals.get("notes")),
+        }
 
     def _check_paths(self, paths: List[str]) -> Dict[str, List[str]]:
         """Check if file paths exist."""

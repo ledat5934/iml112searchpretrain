@@ -1,4 +1,5 @@
 from .description_analyzer_agent import DescriptionAnalyzerAgent
+from .profiling_llm_agent import ProfilingLLMAgent
 from .profiling_agent import ProfilingAgent
 from .base_agent import BaseAgent
 from ..utils.file_io import get_directory_structure
@@ -22,6 +23,7 @@ from .prompt_decider_agent import PromptDeciderAgent
 __all__ = [
     "BaseAgent",
     "DescriptionAnalyzerAgent",
+    "ProfilingLLMAgent",
     "ProfilingAgent",
     "GuidelineAgent",
     "PreprocessingCoderAgent",
