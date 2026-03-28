@@ -15,8 +15,6 @@ from datetime import datetime
 
 from ..agents import (
     DescriptionAnalyzerAgent,
-    ProfilingAgent,
-    ProfilingSummarizerAgent,
     ModelRetrieverAgent,
     ArchitectureRetrieverAgent,
     GuidelineAgent,
@@ -104,15 +102,6 @@ class Manager:
             config=config,
             manager=self,
             llm_config=self.config.description_analyzer,
-        )
-        self.profiling_agent = ProfilingAgent(
-            config=config,
-            manager=self,
-        )
-        self.profiling_summarizer_agent = ProfilingSummarizerAgent(
-            config=config,
-            manager=self,
-            llm_config=self.config.profiling_summarizer,
         )
         self.model_retriever_agent = ModelRetrieverAgent(
             config=config,
@@ -406,26 +395,7 @@ class Manager:
             logger.info("Pipeline stopped after description analysis.")
             return True
 
-        # Step 2: Run profiling agent
-        profiling_result = self.profiling_agent()
-        if "error" in profiling_result:
-            logger.error(f"Data profiling failed: {profiling_result['error']}")
-            return False
-        self.profiling_result = profiling_result
-        logger.info("Profiling overview generated.")
-
-        if stop_after == "profiling":
-            logger.info("Pipeline stopped after profiling.")
-            return True
-
-        # Step 3a: Summarize profiling via LLM
-        profiling_summary = self.profiling_summarizer_agent()
-        if "error" in profiling_summary:
-            logger.error(f"Profiling summarization failed: {profiling_summary['error']}")
-            return False
-        self.profiling_summary = profiling_summary
-
-        # Step 3b: Retrieve pretrained model suggestions
+        # Step 2: Retrieve pretrained model suggestions
         model_suggestions = self.model_retriever_agent()
         self.model_suggestions = model_suggestions
 
@@ -436,7 +406,7 @@ class Manager:
             logger.info("You can now edit the guideline prompt template and resume from guideline generation.")
             return True
 
-        # Step 3c: Run guideline agent
+        # Step 3: Run guideline agent
         guideline = self.guideline_agent()
         if "error" in guideline:
             logger.error(f"Guideline generation failed: {guideline['error']}")
@@ -481,20 +451,6 @@ class Manager:
             # Initialize as None so we can check later
             self.description_analysis = None
         
-        # Load profiling result
-        prof_file = os.path.join(states_dir, "profiling_result.json")
-        if os.path.exists(prof_file):
-            with open(prof_file, 'r', encoding='utf-8') as f:
-                self.profiling_result = json.load(f)
-            logger.info("Loaded profiling result from checkpoint")
-        
-        # Load profiling summary  
-        prof_sum_file = os.path.join(states_dir, "profiling_summary.json")
-        if os.path.exists(prof_sum_file):
-            with open(prof_sum_file, 'r', encoding='utf-8') as f:
-                self.profiling_summary = json.load(f)
-            logger.info("Loaded profiling summary from checkpoint")
-        
         # Load model suggestions
         model_file = os.path.join(states_dir, "model_retrieval.json")
         if os.path.exists(model_file):
@@ -536,30 +492,11 @@ class Manager:
             # Load custom prompt template if available
             self.update_guideline_prompt_template()
             
-            # Check if we have necessary data for guideline generation
-            if not hasattr(self, 'profiling_result') or not hasattr(self, 'model_suggestions'):
-                logger.warning("Missing profiling or model suggestions data. Running those steps first...")
-                
-                # Re-run profiling if needed
-                if not hasattr(self, 'profiling_result'):
-                    profiling_result = self.profiling_agent()
-                    if "error" in profiling_result:
-                        logger.error(f"Data profiling failed: {profiling_result['error']}")
-                        return False
-                    self.profiling_result = profiling_result
-                
-                # Re-run profiling summary if needed
-                if not hasattr(self, 'profiling_summary'):
-                    profiling_summary = self.profiling_summarizer_agent()
-                    if "error" in profiling_summary:
-                        logger.error(f"Profiling summarization failed: {profiling_summary['error']}")
-                        return False
-                    self.profiling_summary = profiling_summary
-                
-                # Re-run model retrieval if needed
-                if not hasattr(self, 'model_suggestions'):
-                    model_suggestions = self.model_retriever_agent()
-                    self.model_suggestions = model_suggestions
+            # Re-run model retrieval if needed
+            if not hasattr(self, 'model_suggestions'):
+                logger.warning("Missing model suggestions data. Running retrieval...")
+                model_suggestions = self.model_retriever_agent()
+                self.model_suggestions = model_suggestions
             
             # Re-run guideline generation (useful after editing prompt)
             guideline = self.guideline_agent()
@@ -908,7 +845,7 @@ class Manager:
             self.output_folder = original_output_folder
     
     def _run_shared_analysis(self):
-        """Run the shared analysis steps (description, profiling, summarization)."""
+        """Run the shared analysis steps (description analysis)."""
         # Step 1: Run description analysis agent
         analysis_result = self.description_analyzer_agent()
         if "error" in analysis_result:
@@ -917,23 +854,6 @@ class Manager:
         logger.info(f"Analysis result: {analysis_result}")
         self.description_analysis = analysis_result
 
-        # Step 2: Run profiling agent
-        profiling_result = self.profiling_agent()
-        if "error" in profiling_result:
-            logger.error(f"Data profiling failed: {profiling_result['error']}")
-            return False
-        self.profiling_result = profiling_result
-        logger.info("Profiling overview generated.")
-
-        # Step 3a: Summarize profiling via LLM to reduce noise
-        profiling_summary = self.profiling_summarizer_agent()
-        if "error" in profiling_summary:
-            logger.error(f"Profiling summarization failed: {profiling_summary['error']}")
-            return False
-        self.profiling_summary = profiling_summary
-
-    # Note: Model retrieval will be run only within the pretrained iteration.
-        
         return True
     
     def _run_iteration_pipeline(self, iteration_type):
@@ -1093,28 +1013,11 @@ class Manager:
 
         self.description_analysis = analysis_result
 
-        # Step 2: Run profiling agent
-        profiling_result = self.profiling_agent()
-        if "error" in profiling_result:
-            logger.error(f"Data profiling failed: {profiling_result['error']}")
-            return
-        
-        self.profiling_result = profiling_result
-        logger.info("Profiling overview generated.")
-
-        # Step 3: Run guideline agent
-        # 3a: Summarize profiling via LLM to reduce noise
-        profiling_summary = self.profiling_summarizer_agent()
-        if "error" in profiling_summary:
-            logger.error(f"Profiling summarization failed: {profiling_summary['error']}")
-            return
-        self.profiling_summary = profiling_summary
-
-        # 3b: Retrieve pretrained model/embedding suggestions
+        # Step 2: Retrieve pretrained model/embedding suggestions
         model_suggestions = self.model_retriever_agent()
         self.model_suggestions = model_suggestions
 
-        # 3c: Run guideline agent with summarized profiling + model suggestions
+        # Step 3: Run guideline agent
         guideline = self.guideline_agent()
         if "error" in guideline:
             logger.error(f"Guideline generation failed: {guideline['error']}")

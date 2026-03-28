@@ -29,9 +29,6 @@ Examples:
   # Run until guideline generation (default behavior for manual guideline editing)
   python run_checkpoint.py -i ./data --stop-at-guideline
 
-  # Run until profiling only  
-  python run_checkpoint.py -i ./data --stop-at-profiling
-
   # Resume from guideline generation (after editing prompt template)
   python run_checkpoint.py -i ./data --resume-from-guideline -o ./runs/run_20240101_120000_abcd1234
 
@@ -83,11 +80,6 @@ Advanced usage:
         "--stop-at-guideline",
         action="store_true",
         help="Stop after guideline generation for manual editing"
-    )
-    shortcut_group.add_argument(
-        "--stop-at-profiling",
-        action="store_true",
-        help="Stop after data profiling"
     )
     shortcut_group.add_argument(
         "--stop-at-description",
@@ -144,9 +136,6 @@ Advanced usage:
         elif args.stop_at_guideline:
             checkpoint_mode = "partial"
             checkpoint_action = "guideline"
-        elif args.stop_at_profiling:
-            checkpoint_mode = "partial"
-            checkpoint_action = "profiling"
         elif args.stop_at_description:
             checkpoint_mode = "partial"
             checkpoint_action = "description"

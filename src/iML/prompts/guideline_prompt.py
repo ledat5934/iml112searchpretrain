@@ -121,14 +121,16 @@ IMPORTANT: Ensure the generated JSON is perfectly valid.
     ]
 }}"""
 
-    def build(self, description_analysis: Dict[str, Any], profiling_result: Dict[str, Any], model_suggestions: Dict[str, Any] | None = None, iteration_type: str | None = None) -> str:
+    def build(self, description_analysis: Dict[str, Any], profiling_result: Dict[str, Any] | None = None, model_suggestions: Dict[str, Any] | None = None, iteration_type: str | None = None) -> str:
         """Build prompt from analysis and profiling results.
 
         Supports two formats:
         - Summarized profiling (preferred): keys include 'files', 'label_analysis', 'feature_quality'.
         - Raw profiling (fallback): keys include 'summaries', 'profiles'.
+        - None / empty dict: proceeds without profiling data.
         """
         task_info = description_analysis
+        profiling_result = profiling_result or {}
 
         dataset_name = task_info.get('name', 'N/A')
         task_desc = task_info.get('task', 'N/A')
