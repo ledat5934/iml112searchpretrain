@@ -20,12 +20,6 @@ There will be NO subsequent assembly step, so your script must be production-rea
 - Data File Description: {data_file_description}
 - Submission File Description: {submission_file_description}
 
-## ANALYSIS CONTEXT
-- Profiling Summary (JSON):
-```json
-{profiling_summary}
-```
-
 ## GUIDANCE (if available)
 ### Preprocessing Guidance
 {preprocessing_guidance}
@@ -54,7 +48,6 @@ Return ONLY the final Python script (no explanations, no markdown).
         self,
         guideline: Dict[str, Any],
         description: Dict[str, Any],
-        profiling_summary: Dict[str, Any],
         previous_code: str = None,
         error_message: str = None,
         iteration_type: str = None,
@@ -75,7 +68,6 @@ Return ONLY the final Python script (no explanations, no markdown).
             preprocessing_guidance=preprocessing_guidance,
             modeling_guidance=modeling_guidance,
             iteration_notes=iteration_notes,
-            profiling_summary=json.dumps(profiling_summary or {}, indent=2),
         )
 
         if previous_code and error_message:

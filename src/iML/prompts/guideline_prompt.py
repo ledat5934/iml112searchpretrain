@@ -7,20 +7,6 @@ from .base_prompt import BasePrompt
 
 logger = logging.getLogger(__name__)
 
-def _create_variables_summary(variables: dict) -> dict:
-    """Create a concise summary for variables in the profile."""
-    summary = {}
-    for var_name, var_details in variables.items():
-        summary[var_name] = {
-            "type": var_details.get("type"),
-            "n_unique": var_details.get("n_unique"),
-            "p_missing": var_details.get("p_missing"),
-            "mean": var_details.get("mean"),
-            "std": var_details.get("std"),
-            "min": var_details.get("min"),
-            "max": var_details.get("max"),
-        }
-    return summary
 
 class GuidelinePrompt(BasePrompt):
     """
@@ -34,15 +20,8 @@ class GuidelinePrompt(BasePrompt):
 ## Dataset Information:
 - Dataset: {dataset_name}
 - Task: {task_desc}
-- Size: {n_rows:,} rows, {n_cols} columns
-- Key Quality Alerts: {alerts}
 - Output format: {output_data}
 - Submission file description: {submission_file_description}
-
-## Variables Analysis Summary:
-```json
-{variables_summary_str}
-```
 
 ## DATAFILE STRUCTURE (SUMMARY)
 {datafile_structure}
@@ -143,107 +122,22 @@ IMPORTANT: Ensure the generated JSON is perfectly valid.
         knowledge_pack: Dict[str, Any] | None = None,
         datafile_structure: str | None = None,
     ) -> str:
-        """Build prompt from analysis and profiling results.
-
-        Supports two formats:
-        - Summarized profiling (preferred): keys include 'files', 'label_analysis', 'feature_quality'.
-        - Raw profiling (fallback): keys include 'summaries', 'profiles'.
-        - None / empty dict: proceeds without profiling data.
-        """
+        """Build prompt from description analysis and optional context."""
         task_info = description_analysis
-        profiling_result = profiling_result or {}
 
         dataset_name = task_info.get('name', 'N/A')
         task_desc = task_info.get('task', 'N/A')
         output_data = task_info.get('output_data', 'N/A')
         submission_file_description = task_info.get('submission file description', 'N/A')
-        n_rows = 0
-        n_cols = 0
-        alerts_out = []
-        variables_summary_dict = {}
 
-        if 'label_analysis' in profiling_result or 'files' in profiling_result:
-            # Summarized format
-            files = profiling_result.get('files', []) or []
-            # choose train-like file if present
-            chosen = None
-            for f in files:
-                name = (f.get('name') or '').lower()
-                if 'train' in name and 'test' not in name and 'submission' not in name:
-                    chosen = f
-                    break
-            if not chosen and files:
-                chosen = files[0]
-            if chosen:
-                n_rows = chosen.get('n_rows', 0) or 0
-                n_cols = chosen.get('n_cols', 0) or 0
-
-            la = profiling_result.get('label_analysis', {}) or {}
-            fq = profiling_result.get('feature_quality', {}) or {}
-
-            # alerts: concise messages
-            if la:
-                if la.get('has_label_column') is False:
-                    alerts_out.append('No label column detected')
-                if la.get('has_missing_labels'):
-                    alerts_out.append('Missing labels present')
-                imb = la.get('class_distribution_imbalance')
-                if imb and imb != 'none':
-                    alerts_out.append(f'label imbalance: {imb}')
-                if la.get('num_classes'):
-                    alerts_out.append(f"num_classes={la['num_classes']}")
-
-            if fq:
-                hm = fq.get('high_missing_columns') or []
-                if hm:
-                    alerts_out.append(f"high-missing cols: {len(hm)}")
-                hc = fq.get('high_cardinality_categoricals') or []
-                if hc:
-                    alerts_out.append(f"high-cardinality cats: {len(hc)}")
-
-            # variables summary minimal to avoid noise
-            variables_summary_dict = {
-                'high_missing_columns': fq.get('high_missing_columns') or [],
-                'high_cardinality_categoricals': fq.get('high_cardinality_categoricals') or [],
-                'date_like_cols': fq.get('date_like_cols') or [],
-                'label_column': la.get('label_column'),
-            }
-        else:
-            # Fallback to raw profiling (legacy)
-            train_key = None
-            for key in profiling_result.get('summaries', {}).keys():
-                if 'test' not in key.lower() and 'submission' not in key.lower():
-                    train_key = key
-                    break
-            if not train_key:
-                train_key = next(iter(profiling_result.get('summaries', {})), None)
-
-            train_summary = profiling_result.get('summaries', {}).get(train_key, {})
-            train_profile = profiling_result.get('profiles', {}).get(train_key, {})
-            n_rows = train_summary.get('n_rows', 0)
-            n_cols = train_summary.get('n_cols', 0)
-            alerts = train_profile.get('alerts', [])
-            variables = train_profile.get('variables', {})
-            alerts_out = alerts[:3] if alerts else []
-            variables_summary_dict = _create_variables_summary(variables)
-
-        # Build auxiliary sections
-        variables_summary_str = json.dumps(variables_summary_dict, indent=2, ensure_ascii=False)
         model_suggestions = model_suggestions or {}
-        # Extract SOTA models (from ADK) if present
         sota_models = model_suggestions.get('sota_models', []) or []
-        model_suggestions_str = json.dumps(model_suggestions, indent=2, ensure_ascii=False)
 
-        # Generate ID format section
-        id_format_section = self._generate_id_format_section(profiling_result)
-
-        # Generate algorithm constraint based on iteration type
         algorithm_constraint = self._get_algorithm_constraint(iteration_type)
 
-        # If pretrained iteration and SOTA models exist, add a hard requirement block
+        # SOTA model shortlist for pretrained iterations
         sota_section = ""
         if iteration_type == "pretrained" and sota_models:
-            # Keep only lightweight view for the prompt
             shortlist = [
                 {
                     "model_name": m.get("model_name"),
@@ -258,20 +152,19 @@ IMPORTANT: Ensure the generated JSON is perfectly valid.
                   "Provide configuration aligned with the chosen model."
             )
         
-        # If custom_nn_search iteration and architecture suggestions exist, add architecture guidance
+        # Architecture guidance for custom_nn_search iterations
         architecture_section = ""
         architecture_suggestions = getattr(self.manager, "architecture_suggestions", None)
         if iteration_type == "custom_nn_search" and architecture_suggestions:
             architectures = architecture_suggestions.get("architectures", [])
             if architectures:
-                # Keep only architecture info for the prompt
                 arch_shortlist = [
                     {
                         "architecture_name": a.get("architecture_name"),
                         "architecture_structure": a.get("architecture_structure"),
                         "source_link": a.get("source_link"),
                     }
-                    for a in architectures[:1]  # Only first candidate
+                    for a in architectures[:1]
                 ]
                 architecture_section = (
                     "\n## SUGGESTED NEURAL NETWORK ARCHITECTURE (from search)\n"
@@ -280,6 +173,8 @@ IMPORTANT: Ensure the generated JSON is perfectly valid.
                       "Feel free to modify layer sizes, add/remove layers, or adjust hyperparameters based on the data characteristics.\n"
                       "The architecture structure should guide your design, but you have flexibility to optimize it for this problem."
                 )
+
+        id_format_section = sota_section + architecture_section
 
         task_context_section = ""
         if task_context:
@@ -299,20 +194,15 @@ IMPORTANT: Ensure the generated JSON is perfectly valid.
                 + "\n```\n"
             )
 
-        datafile_structure = datafile_structure or profiling_result.get("directory_structure_summary") or "N/A"
+        datafile_structure = datafile_structure or "N/A"
 
         prompt = self.template.format(
             dataset_name=dataset_name,
             task_desc=task_desc,
-            n_rows=n_rows,
-            n_cols=n_cols,
-            alerts=alerts_out if alerts_out else 'None',
-            variables_summary_str=variables_summary_str,
             output_data=output_data,
             submission_file_description=submission_file_description,
-            model_suggestions_str=model_suggestions_str,
             algorithm_constraint=algorithm_constraint,
-            id_format_section=id_format_section + sota_section + architecture_section,
+            id_format_section=id_format_section,
             task_context_section=task_context_section,
             knowledge_section=knowledge_section,
             datafile_structure=datafile_structure,
@@ -334,46 +224,6 @@ IMPORTANT: Ensure the generated JSON is perfectly valid.
         else:
             # Default for backward compatibility
             return "None"
-
-    def _generate_id_format_section(self, profiling_result: Dict[str, Any]) -> str:
-        """Generate ID format analysis section for the prompt."""
-        # Check if we have ID format analysis
-        id_format_analysis = profiling_result.get('id_format_analysis', {})
-        
-        if not id_format_analysis:
-            return ""
-        
-        has_extensions = id_format_analysis.get('has_file_extensions', False)
-        detected_extensions = id_format_analysis.get('detected_extensions', [])
-        format_notes = id_format_analysis.get('format_notes', [])
-        submission_analysis = id_format_analysis.get('submission_format_analysis')
-        
-        if not has_extensions and not format_notes:
-            return ""
-        
-        section_lines = ["## ID FORMAT ANALYSIS:"]
-        
-        if has_extensions:
-            section_lines.append(f"- **ID columns contain file extensions**: {', '.join(detected_extensions)}")
-        
-        if submission_analysis:
-            submission_has_ext = submission_analysis.get('submission_has_extensions', False)
-            submission_file = submission_analysis.get('submission_file', 'N/A')
-            section_lines.append(f"- **Submission format detected**: File extensions {'required' if submission_has_ext else 'NOT required'} in {submission_file}")
-        
-        if format_notes:
-            section_lines.append("- **CRITICAL NOTES**:")
-            for note in format_notes:
-                section_lines.append(f"  * {note}")
-        
-        section_lines.extend([
-            "",
-            "**PREPROCESSING NOTE**: If ID format mismatch detected, ensure preprocessing handles ID transformation correctly.",
-            "**MODELING NOTE**: You MUST set 'IDs_in_submission_file_contain_file_extensions' field in the modeling section based on the 'Submission format detected' above. When creating submission files, ensure ID format matches exactly (with or without file extensions).",
-            ""
-        ])
-        
-        return "\n".join(section_lines)
 
     def parse(self, response: str) -> Dict[str, Any]:
         """Parse JSON response from LLM."""

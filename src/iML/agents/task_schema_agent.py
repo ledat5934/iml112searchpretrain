@@ -49,13 +49,11 @@ class TaskSchemaAgent(BaseAgent):
             return {"error": f"failed to read description.txt: {e}"}
 
         description_analysis = getattr(self.manager, "description_analysis", {}) or {}
-        profiling_summary = getattr(self.manager, "profiling_summary", {}) or {}
         directory_structure = get_directory_structure(dataset_path)
 
         prompt = self.prompt_handler.build(
             description_text=description_text,
             description_analysis=description_analysis,
-            profiling_summary=profiling_summary,
             directory_structure=directory_structure,
         )
         self.manager.save_and_log_states(prompt, "task_schema_prompt.txt")

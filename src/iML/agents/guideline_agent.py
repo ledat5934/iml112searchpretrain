@@ -41,18 +41,10 @@ class GuidelineAgent(BaseAgent):
         self.manager.log_agent_start("GuidelineAgent: Starting guideline generation...")
 
         description_analysis = self.manager.description_analysis
-        # Prefer summarized profiling to avoid noise; fallback to raw if missing
-        profiling_result = getattr(self.manager, "profiling_summary", None)
-        if not profiling_result:
-            profiling_result = getattr(self.manager, "profiling_result", None)
 
         if not description_analysis or "error" in description_analysis:
             logger.error("GuidelineAgent: description_analysis is missing.")
             return {"error": "description_analysis not available."}
-        
-        if not profiling_result:
-            logger.info("GuidelineAgent: profiling data not available, proceeding without it.")
-            profiling_result = {}
 
         # Build prompt with model suggestions if available
         model_suggestions = getattr(self.manager, "model_suggestions", None)
@@ -64,7 +56,6 @@ class GuidelineAgent(BaseAgent):
             knowledge_pack = self.manager.knowledge_packs.get(knowledge_key)
         prompt = self.prompt_handler.build(
             description_analysis=description_analysis,
-            profiling_result=profiling_result,
             model_suggestions=model_suggestions,
             iteration_type=iteration_type,
             task_context=task_context,

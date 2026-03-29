@@ -31,7 +31,6 @@ class MonolithicCoderAgent(BaseAgent):
 
         guideline = getattr(self.manager, "guideline", {}) or {}
         description = self.manager.description_analysis or {}
-        profiling_summary = getattr(self.manager, "profiling_summary", {}) or {}
 
         code_to_execute = None
         error_message = None
@@ -42,7 +41,6 @@ class MonolithicCoderAgent(BaseAgent):
             prompt = self.prompt_handler.build(
                 guideline=guideline,
                 description=description,
-                profiling_summary=profiling_summary,
                 previous_code=code_to_execute,
                 error_message=error_message,
                 iteration_type=iteration_type,

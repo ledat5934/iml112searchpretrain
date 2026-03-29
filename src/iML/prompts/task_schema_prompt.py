@@ -22,11 +22,6 @@ You must rely on the description and profiling evidence. Use your best judgment,
 {description_analysis_json}
 ```
 
-## PROFILING SUMMARY (JSON)
-```json
-{profiling_summary_json}
-```
-
 ## DIRECTORY STRUCTURE
 {directory_structure}
 
@@ -80,13 +75,11 @@ IMPORTANT:
         self,
         description_text: str,
         description_analysis: Dict[str, Any],
-        profiling_summary: Dict[str, Any],
         directory_structure: str,
     ) -> str:
         return self.template.format(
             description_text=description_text or "",
             description_analysis_json=json.dumps(description_analysis or {}, indent=2, ensure_ascii=False),
-            profiling_summary_json=json.dumps(profiling_summary or {}, indent=2, ensure_ascii=False),
             directory_structure=directory_structure or "",
         )
 

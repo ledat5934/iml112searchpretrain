@@ -283,33 +283,24 @@ class Manager:
         return True
 
     def _build_reactive_guideline(self, iteration_type: str = None) -> Dict[str, Any]:
-        """Construct a lightweight guideline structure from description/profiling outputs."""
+        """Construct a lightweight guideline structure from description outputs."""
         description = self.description_analysis or {}
-        profiling_summary = getattr(self, "profiling_summary", {}) or {}
-        profiling_result = getattr(self, "profiling_result", {}) or {}
-        id_analysis = profiling_result.get("id_format_analysis", {})
-        submission_analysis = id_analysis.get("submission_format_analysis") if id_analysis else None
-        has_extensions = bool((submission_analysis or {}).get("submission_has_extensions"))
-        id_column_name = (submission_analysis or {}).get("first_column_name", "id")
 
         modeling_section = {
             "note": "GuidelineAgent disabled. Infer modeling strategy directly from task description.",
             "iteration_type": iteration_type or "unspecified",
-            "IDs_in_submission_file_contain_file_extensions": has_extensions,
             "create_submission_file": {
-                "id_column_name": id_column_name,
                 "notes": "Follow the dataset's sample submission exactly. No additional blueprint available."
             },
             "raw_description": description,
         }
 
         preprocessing_section = {
-            "note": "No curated preprocessing plan. Use dataset description and profiling summary to design steps.",
-            "profiling_summary": profiling_summary,
+            "note": "No curated preprocessing plan. Use dataset description to design steps.",
             "dataset_paths": description.get("link to the dataset", []),
         }
 
-        target_info = profiling_result.get("target_info") or {
+        target_info = {
             "note": "Reactive mode could not infer structured target info. Deduce target column from dataset metadata."
         }
 
@@ -1112,7 +1103,6 @@ class Manager:
                 self.task_context = {
                     "description_analysis": getattr(self, "description_analysis", {}) or {},
                     "task_schema": task_schema,
-                    "profiling_summary": getattr(self, "profiling_summary", {}) or {},
                 }
                 try:
                     self.save_and_log_states(
