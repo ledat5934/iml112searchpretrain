@@ -50,9 +50,9 @@ class GuidelineAgent(BaseAgent):
             logger.error("GuidelineAgent: description_analysis is missing.")
             return {"error": "description_analysis not available."}
         
-        if not profiling_result or "error" in profiling_result:
-            logger.error("GuidelineAgent: profiling summary/result is missing.")
-            return {"error": "profiling_result not available."}
+        if not profiling_result:
+            logger.info("GuidelineAgent: profiling data not available, proceeding without it.")
+            profiling_result = {}
 
         # Build prompt with model suggestions if available
         model_suggestions = getattr(self.manager, "model_suggestions", None)

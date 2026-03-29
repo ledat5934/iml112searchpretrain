@@ -14,7 +14,7 @@ class PreprocessingCoderAgent(BaseAgent):
     Agent to create and execute preprocessing code.
     It has a retry loop to generate and validate code until it runs successfully or runs out of retries.
     """
-    def __init__(self, config: Dict, manager: Any, llm_config: Dict, max_retries: int = 10):
+    def __init__(self, config: Dict, manager: Any, llm_config: Dict, max_retries: int = 1):
         super().__init__(config, manager)
         self.llm_config = llm_config
         self.llm = init_llm(
