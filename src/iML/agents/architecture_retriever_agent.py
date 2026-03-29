@@ -130,6 +130,14 @@ class ArchitectureRetrieverAgent(BaseAgent):
 
     def __call__(self) -> Dict[str, Any]:
         self.manager.log_agent_start("ArchitectureRetrieverAgent: searching for suitable architectures via ADK...")
+        search_enabled = bool(getattr(self.manager, "is_search_enabled", lambda: True)())
+        if not search_enabled:
+            self.manager.log_agent_end("ArchitectureRetrieverAgent: skipped (llm_only search mode).")
+            return {
+                "architectures": [],
+                "source": "disabled-search",
+                "note": "Search mode is llm_only — skip external architecture retrieval; LLM will design from scratch",
+            }
 
         desc = getattr(self.manager, "description_analysis", {}) or {}
         prof = getattr(self.manager, "profiling_summary", {}) or {}

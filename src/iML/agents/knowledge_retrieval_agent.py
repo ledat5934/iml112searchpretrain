@@ -224,17 +224,24 @@ class KnowledgeRetrievalAgent(BaseAgent):
                 + prompt
             )
 
-        # Encourage tool usage when ADK is available.
-        prompt_for_search = (
-            prompt
-            + "\n\nIf you have access to a google_search tool, use it 2-4 times to confirm best practices and include 3-8 URLs/keywords under sources_or_keywords."
-        )
+        search_enabled = bool(getattr(self.manager, "is_search_enabled", lambda: True)())
+        # Encourage tool usage only when search mode allows it.
+        if search_enabled:
+            prompt_for_search = (
+                prompt
+                + "\n\nIf you have access to a google_search tool, use it 2-4 times to confirm best practices and include 3-8 URLs/keywords under sources_or_keywords."
+            )
+        else:
+            prompt_for_search = (
+                prompt
+                + "\n\nRun mode is LLM-only. Do NOT rely on external search/tools; infer best practices from provided context."
+            )
 
         self.manager.save_and_log_states(prompt_for_search, f"knowledge/knowledge_{save_suffix}_prompt.txt")
 
         response = None
         # Prefer ADK+Search when available; fallback to backbone LLM.
-        if ADK_AVAILABLE:
+        if ADK_AVAILABLE and search_enabled:
             logger.info(
                 f"[KNOWLEDGE_RETRIEVAL] adk_available=True google_search_tool_enabled=True "
                 f"model={os.getenv('KNOWLEDGE_SEARCH_MODEL', 'gemini-2.5-flash')} iteration_type={iteration_type}"

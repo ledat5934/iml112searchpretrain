@@ -168,6 +168,19 @@ class ModelRetrieverAgent(BaseAgent):
 
     def __call__(self) -> Dict[str, Any]:
         self.manager.log_agent_start("ModelRetrieverAgent: retrieving pretrained SOTA models via ADK...")
+        search_enabled = bool(getattr(self.manager, "is_search_enabled", lambda: True)())
+        if not search_enabled:
+            suggestions: Dict[str, Any] = {
+                "sota_models": [],
+                "source": "disabled-search",
+                "note": "Search mode is llm_only — skip external model retrieval; LLM will choose model.",
+            }
+            self.manager.save_and_log_states(
+                json.dumps(suggestions, indent=2, ensure_ascii=False),
+                "model_retrieval.json",
+            )
+            self.manager.log_agent_end("ModelRetrieverAgent: skipped (llm_only search mode).")
+            return suggestions
 
         desc = getattr(self.manager, "description_analysis", {}) or {}
         prof = getattr(self.manager, "profiling_summary", {}) or {}

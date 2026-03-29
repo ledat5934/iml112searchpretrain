@@ -259,9 +259,11 @@ PHASE_NAME: {phase_name}
             final_validation_score="{final_validation_score}",
             submission_path_note=submission_path_note,
         )
-        if ADK_AVAILABLE:
+        search_enabled = bool(getattr(self.manager, "is_search_enabled", lambda: True)())
+        if ADK_AVAILABLE and search_enabled:
             # Use ADK runner with a single Agent having google_search tool
             import asyncio, uuid
+            from concurrent.futures import ThreadPoolExecutor
 
             def instruction_fn(ctx):
                 return prompt_text
@@ -354,11 +356,12 @@ PHASE_NAME: {phase_name}
                 return out_text
 
             try:
-                loop = asyncio.get_running_loop()
+                asyncio.get_running_loop()
             except RuntimeError:
                 out_text = asyncio.run(_run_once())
             else:
-                out_text = loop.run_until_complete(_run_once())
+                with ThreadPoolExecutor(max_workers=1) as ex:
+                    out_text = ex.submit(lambda: asyncio.run(_run_once())).result()
 
             raw_text = out_text
             code_block = self._extract_code_block(raw_text)

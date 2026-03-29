@@ -89,6 +89,7 @@ class Manager:
         output_folder: str,
         config: str,
         ablation_variant: str = None,
+        search_mode: str | None = None,
     ):
         """Initialize Manager with required paths and config from YAML file.
 
@@ -103,6 +104,21 @@ class Manager:
         self.ablation_variant = ablation_variant
         # Provide an instance logger for prompts/agents that expect manager.logger
         self.logger = logging.getLogger(__name__)
+        # Search mode:
+        # - "hybrid" (default): allow external retrieval/search tools (ADK) when available
+        # - "llm_only": disable external search entirely; rely on backbone LLM only
+        # Precedence: CLI/search_mode arg > config.search_mode; then ablation aliases can force llm_only if CLI unset.
+        configured_search_mode = str(getattr(self.config, "search_mode", "hybrid") or "hybrid").strip().lower()
+        if configured_search_mode not in {"hybrid", "llm_only"}:
+            configured_search_mode = "hybrid"
+        if search_mode is not None:
+            cli_sm = str(search_mode).strip().lower()
+            if cli_sm in {"hybrid", "llm_only"}:
+                configured_search_mode = cli_sm
+        elif (self.ablation_variant or "").strip().lower() in {"llm_only", "no_search", "nosearch"}:
+            configured_search_mode = "llm_only"
+        self.search_mode = configured_search_mode
+        self.logger.info(f"[RUN_MODE] search_mode={self.search_mode}")
 
         # Validate paths
         for path, name in [(input_data_folder, "input_data_folder")]:
@@ -271,6 +287,10 @@ class Manager:
 
     def is_debug_enabled(self) -> bool:
         return not self.is_static_mode()
+
+    def is_search_enabled(self) -> bool:
+        """Whether external web/ADK search is allowed in this run."""
+        return (self.search_mode or "hybrid") != "llm_only"
 
     def _prepare_guideline(self, iteration_type: str = None) -> bool:
         """

@@ -19,6 +19,11 @@ use_tutorial_summary: True
 # Debug
 verbosity: 2
 
+# Search mode:
+# - hybrid: use external retrieval/search tools (ADK) when available
+# - llm_only: disable external search entirely; rely on LLM-only generation
+search_mode: hybrid
+
 # Default LLM Configuration
 llm: &default_llm
   provider: gemini

@@ -32,6 +32,9 @@ Examples:
   # Checkpoint workflow - stop at guideline for manual editing
   python run.py --checkpoint-mode partial --checkpoint-action guideline -i ./dataset
   python run.py --checkpoint-mode resume --checkpoint-action preprocessing -o ./previous_run
+
+  # LLM-only (no ADK / web search)
+  python run.py -i ./my_dataset --search-mode llm_only
         """,
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
@@ -76,7 +79,14 @@ Examples:
              "'reactive' (no Guideline agent), 'mono' (monolithic coder without modular assembly), "
              "'static' (no intermediate execution/runtime verification)."
     )
-    
+    parser.add_argument(
+        "--search-mode",
+        choices=["hybrid", "llm_only"],
+        default=None,
+        help="Override configs/default.yaml search_mode: 'hybrid' (ADK/web search when available) or "
+             "'llm_only' (no external search; backbone LLM only).",
+    )
+
     args = parser.parse_args()
     
     # Call the main pipeline function from main_runner
@@ -88,6 +98,7 @@ Examples:
         checkpoint_action=args.checkpoint_action,
         single_iteration=args.single_iteration,
         ablation_variant=args.ablation_variant,
+        search_mode=args.search_mode,
     )
 
 if __name__ == "__main__":

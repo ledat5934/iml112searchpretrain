@@ -125,7 +125,13 @@ Advanced usage:
         "--checkpoint-action",
         help="Advanced: Checkpoint action (overrides shortcuts)"
     )
-    
+    parser.add_argument(
+        "--search-mode",
+        choices=["hybrid", "llm_only"],
+        default=None,
+        help="Override config search_mode: hybrid (ADK/search) or llm_only (no external search).",
+    )
+
     args = parser.parse_args()
     
     # Determine checkpoint mode and action from shortcuts or advanced options
@@ -200,6 +206,7 @@ Advanced usage:
             config_path=args.config,
             checkpoint_mode=checkpoint_mode,
             checkpoint_action=checkpoint_action,
+            search_mode=args.search_mode,
         )
     except KeyboardInterrupt:
         print("\n⚠️  Pipeline interrupted by user")
