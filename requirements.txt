@@ -84,7 +84,8 @@ MarkupSafe==3.0.2
 marshmallow==3.26.1
 matplotlib==3.10.0
 mdurl==0.1.2
-mkl-service==2.4.0
+# 2.4.0 has no wheel for newer Python (e.g. Kaggle 3.10+); use 2.4.1+
+mkl-service>=2.4.1,<3
 mpmath==1.3.0
 multidict==6.6.3
 multimethod==1.12
