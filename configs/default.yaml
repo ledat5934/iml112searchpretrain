@@ -49,12 +49,6 @@ task_schema_agent:
 knowledge_retriever:
   <<: *default_llm
 
-error_triage_agent:
-  <<: *default_llm
-
-evidence_gathering_agent:
-  <<: *default_llm
-
 guideline_generator:
   <<: *default_llm
 

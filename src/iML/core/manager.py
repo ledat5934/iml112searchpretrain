@@ -22,8 +22,6 @@ from ..agents import (
     ArchitectureRetrieverAgent,
     TaskSchemaAgent,
     KnowledgeRetrievalAgent,
-    ErrorTriageAgent,
-    EvidenceGatheringAgent,
     GuidelineAgent,
     PreprocessingCoderAgent,
     ModelingCoderAgent,
@@ -167,18 +165,6 @@ class Manager:
             config=config,
             manager=self,
             llm_config=knowledge_llm_config,
-        )
-        error_triage_llm = getattr(self.config, "error_triage_agent", None) or self.config.guideline_generator
-        self.error_triage_agent = ErrorTriageAgent(
-            config=config,
-            manager=self,
-            llm_config=error_triage_llm,
-        )
-        evidence_llm = getattr(self.config, "evidence_gathering_agent", None) or self.config.guideline_generator
-        self.evidence_gathering_agent = EvidenceGatheringAgent(
-            config=config,
-            manager=self,
-            llm_config=evidence_llm,
         )
         self.guideline_agent = GuidelineAgent(
             config=config,
@@ -1252,56 +1238,11 @@ class Manager:
             logger.warning(f"KnowledgeRetrievalAgent failed: {e}")
 
     def build_debug_context(self, stderr: str, code: str, phase_name: str, attempt: int) -> str:
-        """Run triage + optional evidence gathering, return augmented task description."""
-        base_desc = (self.description_analysis or {}).get("task_description") or json.dumps(self.description_analysis or {})
-        task_schema = getattr(self, "task_schema", {}) or {}
-        datafile_structure = get_directory_structure(self.input_data_folder)
-
-        triage = {}
-        try:
-            triage = self.error_triage_agent(
-                stderr=stderr,
-                code_snippet=code,
-                datafile_structure=datafile_structure,
-                task_schema=task_schema,
-            )
-        except Exception as e:
-            logger.warning(f"ErrorTriageAgent failed: {e}")
-            return base_desc
-
-        evidence_text = ""
-        action = (triage or {}).get("action", "direct_debug")
-        if action == "gather_evidence":
-            try:
-                evidence = self.evidence_gathering_agent(
-                    stderr=stderr,
-                    code_snippet=code,
-                    datafile_structure=datafile_structure,
-                    task_schema=task_schema,
-                    phase_name=phase_name,
-                    attempt=attempt,
-                )
-                stdout = (evidence or {}).get("stdout", "")
-                err = (evidence or {}).get("stderr", "")
-                evidence_text = "\n".join(
-                    [
-                        "### Evidence stdout",
-                        stdout.strip() or "<empty>",
-                        "### Evidence stderr",
-                        err.strip() or "<empty>",
-                    ]
-                )
-            except Exception as e:
-                logger.warning(f"EvidenceGatheringAgent failed: {e}")
-
-        if not evidence_text:
-            return base_desc
-
-        return (
-            base_desc
-            + "\n\n## DEBUG EVIDENCE (auto-collected)\n"
-            + evidence_text
-        )
+        """
+        Legacy/simple debug context (no triage/evidence stage).
+        Keep behavior close to earlier pipeline: pass description-only context.
+        """
+        return (self.description_analysis or {}).get("task_description") or json.dumps(self.description_analysis or {})
     
     def _run_iteration_pipeline(self, iteration_type):
         """Run the pipeline for a specific iteration type."""
