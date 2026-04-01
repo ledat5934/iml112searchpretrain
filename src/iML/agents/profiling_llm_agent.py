@@ -37,6 +37,80 @@ class ProfilingLLMAgent(BaseAgent):
             multi_turn=self.llm_config.get("multi_turn", False),
         )
 
+    def _collect_core_metadata_files(self, root: Path) -> List[Path]:
+        """
+        Collect small, high-signal metadata files beyond the 1-file-per-dir-ext sampling rule.
+        This prevents hallucinations on datasets whose contracts are defined by mapping/folds/labels files.
+        """
+        patterns = [
+            "*sample_submission*",
+            "*submission*",
+            "*train*",
+            "*test*",
+            "*label*",
+            "*labels*",
+            "*fold*",
+            "*cv*",
+            "*split*",
+            "*species*",
+            "*class*",
+            "*mapping*",
+            "*filename*",
+            "*id2*",
+            "*id_to*",
+        ]
+        exts = {".txt", ".csv", ".tsv", ".json", ".jsonl"}
+        max_mb = 20.0
+        max_files = 120
+
+        found: List[Path] = []
+        seen = set()
+
+        preferred_dirs = ["essential_data", "metadata", "meta", "input", "data"]
+        for dname in preferred_dirs:
+            d = root / dname
+            if not d.is_dir():
+                continue
+            for pat in patterns:
+                for p in d.rglob(pat):
+                    if not p.is_file():
+                        continue
+                    if p.suffix.lower() not in exts:
+                        continue
+                    try:
+                        if p.stat().st_size / (1024 * 1024) > max_mb:
+                            continue
+                    except Exception:
+                        continue
+                    key = p.as_posix()
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    found.append(p)
+                    if len(found) >= max_files:
+                        return found
+
+        for pat in patterns:
+            for p in root.rglob(pat):
+                if len(found) >= max_files:
+                    break
+                if not p.is_file():
+                    continue
+                if p.suffix.lower() not in exts:
+                    continue
+                try:
+                    if p.stat().st_size / (1024 * 1024) > max_mb:
+                        continue
+                except Exception:
+                    continue
+                key = p.as_posix()
+                if key in seen:
+                    continue
+                seen.add(key)
+                found.append(p)
+
+        return found
+
     def _extract_json_between_markers(self, stdout: str) -> Optional[str]:
         if not stdout:
             return None
@@ -76,14 +150,27 @@ class ProfilingLLMAgent(BaseAgent):
         self.manager.log_agent_start("ProfilingLLMAgent: generating and running profiling script...")
 
         root = Path(dataset_root)
-        # Deterministic allowed file list (1 file per dir+ext)
+        # Base deterministic allowed file list (1 file per dir+ext)
         cfg = BasicProfilerConfig(max_files_per_dir_ext=1)
         allowed_files, sampling_meta = collect_sample_files_by_dir_extension(
             root,
             cfg=cfg,
             skip_filenames={"description.txt"},
         )
-        allowed_abs = [str(p) for p in allowed_files]
+        # Add core metadata files (small, high-signal) beyond the sampling rule.
+        core_meta = self._collect_core_metadata_files(root)
+        allow_set = set()
+        for p in allowed_files:
+            try:
+                allow_set.add(p.resolve().as_posix())
+            except Exception:
+                allow_set.add(str(p))
+        for p in core_meta:
+            try:
+                allow_set.add(p.resolve().as_posix())
+            except Exception:
+                allow_set.add(str(p))
+        allowed_abs = sorted(list(allow_set))
 
         datafile_structure = get_directory_structure(
             str(root),
@@ -128,6 +215,7 @@ class ProfilingLLMAgent(BaseAgent):
         parsed_meta = {
             "sampling_meta": sampling_meta,
             "n_allowed_files": len(allowed_abs),
+            "n_core_metadata_files": len(core_meta),
         }
         try:
             self.manager.save_and_log_states(

@@ -55,6 +55,13 @@ BASIC_PROFILES (JSON; sampled):
   - tabular (csv/tsv/parquet/xlsx/json): read <= {tabular_nrows} rows per file max.
   - text: read <= {text_max_bytes} bytes per file max.
   - images/audio: read metadata only (width/height/mode; wav sr/channels/duration).
+- CORE METADATA PRIORITY (CRITICAL):
+  - You MUST prioritize extracting schemas/roles from small metadata files that define dataset contracts:
+    - folds/splits (cv, fold, split)
+    - labels/targets
+    - id-to-filename mapping
+    - class/species list / label vocabulary
+  - If multiple such files exist, extract from ALL of them (they are small).
 - The script MUST print exactly one JSON object between markers:
   - Print a line: ===PROFILING_JSON_START===
   - Print the JSON object (single JSON, can be pretty-printed)
@@ -70,6 +77,13 @@ The JSON object MUST have these top-level keys:
     "tabular": [{{"rel_path": str, "columns": [str], "dtypes": object, "nrows_sampled": int}}],
     "text": [{{"rel_path": str, "kind": "tabular|text", "sniff": object}}],
     "media": [{{"rel_path": str, "kind": "image|audio", "meta": object}}]
+  }},
+  "relational_signals": {{
+    "file_roles": [{{"rel_path": str, "role": "submission|labels|folds|id_mapping|class_list|unknown", "evidence": str}}],
+    "join_keys": [{{"key": str, "files": [str], "confidence": "low|medium|high", "notes": str}}],
+    "recommended_split_files": [str],
+    "recommended_label_files": [str],
+    "recommended_id_mapping_files": [str]
   }},
   "signals": {{
     "candidate_train_files": [str],
