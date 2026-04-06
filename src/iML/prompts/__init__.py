@@ -12,3 +12,8 @@ from .error_triage_prompt import ErrorTriagePrompt
 from .evidence_gathering_prompt import EvidenceGatheringPrompt
 from .prompt_decider_prompt import PromptDeciderPrompt
 from .profiling_llm_prompt import ProfilingLLMPrompt
+from .cache_builder_prompt import CacheBuilderPrompt
+from .research_planner_prompt import ResearchPlannerPrompt
+from .proxy_estimator_prompt import ProxyEstimatorPrompt
+from .research_selector_prompt import ResearchSelectorPrompt
+from .experiment_coder_prompt import ExperimentCoderPrompt

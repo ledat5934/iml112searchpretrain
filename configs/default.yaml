@@ -24,6 +24,12 @@ verbosity: 2
 # - llm_only: disable external search entirely; rely on LLM-only generation
 search_mode: hybrid
 
+post_baseline_research:
+  enabled: true
+  max_proposals: 6
+  top_k: 2
+  generate_experiment_code: true
+
 # Default LLM Configuration
 llm: &default_llm
   provider: gemini
@@ -62,4 +68,19 @@ monolithic_coder:
   <<: *default_llm
 
 assembler:
+  <<: *default_llm
+
+cache_builder:
+  <<: *default_llm
+
+research_agent:
+  <<: *default_llm
+
+proxy_estimator:
+  <<: *default_llm
+
+research_selector:
+  <<: *default_llm
+
+experiment_coder:
   <<: *default_llm

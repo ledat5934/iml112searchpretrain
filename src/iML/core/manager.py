@@ -9,6 +9,7 @@ import time
 import signal
 import threading
 import platform
+import re
 from pathlib import Path
 from typing import List, Dict, Any
 from datetime import datetime
@@ -30,10 +31,15 @@ from ..agents import (
     ComparisonAgent,
     DebugAgent,
     PromptDeciderAgent,
+    CacheBuilderAgent,
+    ResearchPlannerAgent,
+    ExperimentCoderAgent,
 )
 from ..agents.comparison_agent import IterationResultExtractor
 from ..llm import ChatLLMFactory
 from ..utils.file_io import get_directory_structure
+from ..utils.research_artifacts import ARTIFACT_IO_TEMPLATE
+from ..utils.proxy_probe_builder import build_proxy_probe_script
 
 # Basic configuration
 logging.basicConfig(level=logging.INFO)
@@ -211,6 +217,24 @@ class Manager:
             manager=self,
             max_rounds=1,
         )
+        research_llm_config = getattr(self.config, "research_agent", None) or self.config.guideline_generator
+        cache_builder_llm_config = getattr(self.config, "cache_builder", None) or self.config.preprocessing_coder
+        experiment_llm_config = getattr(self.config, "experiment_coder", None) or self.config.modeling_coder
+        self.cache_builder_agent = CacheBuilderAgent(
+            config=config,
+            manager=self,
+            llm_config=cache_builder_llm_config,
+        )
+        self.research_planner_agent = ResearchPlannerAgent(
+            config=config,
+            manager=self,
+            llm_config=research_llm_config,
+        )
+        self.experiment_coder_agent = ExperimentCoderAgent(
+            config=config,
+            manager=self,
+            llm_config=experiment_llm_config,
+        )
 
         self.context = {
             "input_data_folder": input_data_folder,
@@ -221,6 +245,7 @@ class Manager:
         self.task_context = None
         self.knowledge_packs = {}
         self.prompt_fields_by_iteration: Dict[str, Any] = {}
+        self.latest_execution_result: Dict[str, Any] | None = None
 
     def get_prompt_fields(self, iteration_type: str | None = None) -> Dict[str, Any]:
         """
@@ -277,6 +302,599 @@ class Manager:
     def is_search_enabled(self) -> bool:
         """Whether external web/ADK search is allowed in this run."""
         return (self.search_mode or "hybrid") != "llm_only"
+
+    def get_post_baseline_settings(self) -> Dict[str, Any]:
+        cfg = getattr(self.config, "post_baseline_research", None)
+        return {
+            "enabled": bool(getattr(cfg, "enabled", True)),
+            "max_proposals": int(getattr(cfg, "max_proposals", 6)),
+            "top_k": int(getattr(cfg, "top_k", 2)),
+            "generate_experiment_code": bool(getattr(cfg, "generate_experiment_code", True)),
+        }
+
+    def is_post_baseline_research_enabled(self) -> bool:
+        return self.get_post_baseline_settings().get("enabled", True)
+
+    def _write_workspace_file(self, path: Path, content: str) -> str:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content or "", encoding="utf-8")
+        return str(path)
+
+    def _materialize_research_workspace(self, iteration_type: str | None = None) -> Dict[str, Any]:
+        workspace_dir = Path(self.output_folder) / "research_workspace"
+        metadata_dir = workspace_dir / "metadata"
+        cache_dir = workspace_dir / "artifacts" / "cache"
+        experiments_dir = workspace_dir / "experiments"
+        metadata_dir.mkdir(parents=True, exist_ok=True)
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        experiments_dir.mkdir(parents=True, exist_ok=True)
+
+        materialized = {
+            "workspace_dir": str(workspace_dir),
+            "metadata_dir": str(metadata_dir),
+            "cache_dir": str(cache_dir),
+            "experiments_dir": str(experiments_dir),
+            "files": {},
+            "iteration_type": iteration_type or "default",
+        }
+
+        materialized["files"]["artifact_io"] = self._write_workspace_file(
+            workspace_dir / "artifact_io.py",
+            ARTIFACT_IO_TEMPLATE,
+        )
+        if getattr(self, "preprocessing_code", None):
+            materialized["files"]["baseline_preprocessing"] = self._write_workspace_file(
+                workspace_dir / "baseline_preprocessing.py",
+                self.preprocessing_code,
+            )
+        if getattr(self, "modeling_code", None):
+            materialized["files"]["baseline_modeling"] = self._write_workspace_file(
+                workspace_dir / "baseline_modeling.py",
+                self.modeling_code,
+            )
+        if getattr(self, "assembled_code", None):
+            materialized["files"]["baseline_pipeline"] = self._write_workspace_file(
+                workspace_dir / "baseline_pipeline.py",
+                self.assembled_code,
+            )
+
+        return materialized
+
+    def _build_data_contract(self, iteration_type: str | None, materialized: Dict[str, Any]) -> Dict[str, Any]:
+        description = getattr(self, "description_analysis", {}) or {}
+        guideline = getattr(self, "guideline", {}) or {}
+        task_schema = getattr(self, "task_schema", {}) or {}
+        profiling_summary = getattr(self, "profiling_summary", {}) or {}
+        knowledge_key = iteration_type or "default"
+        knowledge_pack = (getattr(self, "knowledge_packs", {}) or {}).get(knowledge_key, {}) or {}
+        latest = getattr(self, "latest_execution_result", None) or {}
+
+        return {
+            "iteration_type": iteration_type or "default",
+            "task_name": description.get("name"),
+            "task_description": description.get("task") or description.get("task_description"),
+            "task_type": (task_schema or {}).get("task_type") or description.get("task_type"),
+            "dataset_paths": description.get("link to the dataset", []),
+            "target_identification": guideline.get("target_identification", {}),
+            "modeling_guideline": guideline.get("modeling", {}),
+            "preprocessing_guideline": guideline.get("preprocessing", {}),
+            "task_schema": task_schema,
+            "profiling_summary": profiling_summary,
+            "knowledge_pack": knowledge_pack,
+            "workspace_layout": {
+                "workspace_dir": materialized.get("workspace_dir"),
+                "cache_dir": materialized.get("cache_dir"),
+                "metadata_dir": materialized.get("metadata_dir"),
+                "experiments_dir": materialized.get("experiments_dir"),
+                "files": materialized.get("files", {}),
+            },
+            "cache_contract": {
+                "builder_script": "cache_builder.py",
+                "cache_manifest": "artifacts/cache/cache_manifest.json",
+                "loader_module": "artifact_io.py",
+                "expected_cache_root": "research_workspace/artifacts/cache",
+                "write_metadata_files": [
+                    "metadata/data_contract.json",
+                    "metadata/baseline_summary.json",
+                    "metadata/cache_summary.json",
+                    "metadata/preprocess_runtime_metadata.json",
+                ],
+            },
+            "baseline_execution": {
+                "phase_name": latest.get("phase_name"),
+                "attempt": latest.get("attempt"),
+                "success": latest.get("success"),
+            },
+        }
+
+    def _build_baseline_summary(self, iteration_type: str | None, materialized: Dict[str, Any]) -> Dict[str, Any]:
+        latest = getattr(self, "latest_execution_result", None) or {}
+        stdout_text = (latest.get("stdout") or "").strip()
+        stderr_text = (latest.get("stderr") or "").strip()
+        knowledge_key = iteration_type or "default"
+        knowledge_pack = (getattr(self, "knowledge_packs", {}) or {}).get(knowledge_key, {}) or {}
+
+        return {
+            "iteration_type": iteration_type or "default",
+            "output_folder": self.output_folder,
+            "search_mode": self.search_mode,
+            "ablation_variant": self.ablation_variant,
+            "description_analysis": getattr(self, "description_analysis", {}) or {},
+            "task_schema": getattr(self, "task_schema", {}) or {},
+            "guideline": getattr(self, "guideline", {}) or {},
+            "knowledge_pack": knowledge_pack,
+            "materialized_files": materialized.get("files", {}),
+            "latest_execution": {
+                "phase_name": latest.get("phase_name"),
+                "attempt": latest.get("attempt"),
+                "success": latest.get("success"),
+                "stdout_excerpt": stdout_text[-4000:] if stdout_text else "",
+                "stderr_excerpt": stderr_text[-2000:] if stderr_text else "",
+            },
+        }
+
+    def _append_research_memory(self, workspace_dir: str, payload: Dict[str, Any]) -> None:
+        memory_path = Path(workspace_dir) / "metadata" / "research_memory.jsonl"
+        memory_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(memory_path, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(payload, ensure_ascii=False) + "\n")
+
+    def _find_proposal_by_id(self, proposals: Dict[str, Any], proposal_id: str | None) -> Dict[str, Any] | None:
+        if not proposal_id:
+            return None
+        for proposal in (proposals or {}).get("proposals", []) or []:
+            if proposal.get("proposal_id") == proposal_id:
+                return proposal
+        return None
+
+    def _normalize_metric_for_probe(self, metric_name: str | None, metric_value: Any) -> float | None:
+        if metric_name is None or metric_value is None:
+            return None
+        try:
+            value = float(metric_value)
+        except Exception:
+            return None
+        name = str(metric_name).strip().lower()
+        if name in {"rmse", "mae", "mse", "log_loss"}:
+            return max(0.0, min(1.0, 1.0 / (1.0 + max(0.0, value))))
+        if name == "r2":
+            return max(0.0, min(1.0, (value + 1.0) / 2.0))
+        return max(0.0, min(1.0, value))
+
+    def _extract_proxy_probe_metrics(self, probe_entry: Dict[str, Any]) -> Dict[str, Any]:
+        execution = probe_entry.get("execution") or {}
+        probe_path = probe_entry.get("path")
+        experiment_dir = Path(probe_path).parent if probe_path else None
+        payload = {}
+        if experiment_dir:
+            result_path = experiment_dir / "proxy_probe_result.json"
+            if result_path.exists():
+                try:
+                    payload = json.loads(result_path.read_text(encoding="utf-8"))
+                except Exception:
+                    payload = {}
+
+        text = "\n".join([(execution.get("stdout") or ""), (execution.get("stderr") or "")]).strip()
+        probe_score_name = payload.get("probe_score_name")
+        probe_score_value = payload.get("probe_score_value")
+        primary_metric_name = payload.get("primary_metric_name")
+        primary_metric_value = payload.get("primary_metric_value")
+        all_probe_metrics = payload.get("all_probe_metrics") or {}
+        if text:
+            score_name_match = re.findall(r"PROXY_SCORE_NAME\s*:\s*([A-Za-z0-9_\-\.]+)", text, flags=re.IGNORECASE)
+            score_value_match = re.findall(r"PROXY_SCORE_VALUE\s*:\s*([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)", text, flags=re.IGNORECASE)
+            metric_name_match = re.findall(r"PRIMARY_METRIC_NAME\s*:\s*([A-Za-z0-9_\-\.]+)", text, flags=re.IGNORECASE)
+            metric_value_match = re.findall(r"PRIMARY_METRIC_VALUE\s*:\s*([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)", text, flags=re.IGNORECASE)
+            if score_name_match and probe_score_name is None:
+                probe_score_name = score_name_match[-1].strip().lower()
+            if score_value_match and probe_score_value is None:
+                try:
+                    probe_score_value = float(score_value_match[-1])
+                except Exception:
+                    pass
+            if metric_name_match and primary_metric_name is None:
+                primary_metric_name = metric_name_match[-1].strip().lower()
+            if metric_value_match and primary_metric_value is None:
+                try:
+                    primary_metric_value = float(metric_value_match[-1])
+                except Exception:
+                    pass
+
+        if probe_score_value is None and primary_metric_name is not None and primary_metric_value is not None:
+            probe_score_value = self._normalize_metric_for_probe(primary_metric_name, primary_metric_value)
+        try:
+            probe_score_value = float(probe_score_value) if probe_score_value is not None else None
+        except Exception:
+            probe_score_value = None
+
+        return {
+            "probe_score_name": probe_score_name,
+            "probe_score_value": probe_score_value,
+            "primary_metric_name": primary_metric_name,
+            "primary_metric_value": primary_metric_value,
+            "all_probe_metrics": all_probe_metrics,
+            "probe_details": payload.get("probe_details") or {},
+            "runtime_seconds": payload.get("runtime_seconds"),
+        }
+
+    def _select_proposals_quantitatively(
+        self,
+        proposals: Dict[str, Any],
+        probe_results: List[Dict[str, Any]],
+        top_k: int,
+    ) -> Dict[str, Any]:
+        ranked = []
+        for entry in probe_results or []:
+            metrics = self._extract_proxy_probe_metrics(entry)
+            execution = entry.get("execution") or {}
+            ranked.append(
+                {
+                    "proposal_id": entry.get("proposal_id"),
+                    "execution_success": bool(execution.get("success")),
+                    "probe_score_name": metrics.get("probe_score_name"),
+                    "probe_score_value": metrics.get("probe_score_value"),
+                    "primary_metric_name": metrics.get("primary_metric_name"),
+                    "primary_metric_value": metrics.get("primary_metric_value"),
+                    "all_probe_metrics": metrics.get("all_probe_metrics", {}),
+                    "probe_details": metrics.get("probe_details", {}),
+                    "runtime_seconds": metrics.get("runtime_seconds"),
+                }
+            )
+        ranked.sort(
+            key=lambda item: (
+                bool(item.get("execution_success")),
+                item.get("probe_score_value") if item.get("probe_score_value") is not None else float("-inf"),
+                item.get("primary_metric_value") if item.get("primary_metric_value") is not None else float("-inf"),
+            ),
+            reverse=True,
+        )
+        selected = []
+        rejected = []
+        for idx, item in enumerate(ranked):
+            target = {
+                "proposal_id": item.get("proposal_id"),
+                "priority_rank": idx + 1,
+                "selection_reason": f"probe_score={float(item.get('probe_score_value') or 0.0):.6f}",
+                "probe_score_name": item.get("probe_score_name"),
+                "probe_score": item.get("probe_score_value"),
+                "primary_metric_name": item.get("primary_metric_name"),
+                "primary_metric_value": item.get("primary_metric_value"),
+                "execution_success": item.get("execution_success"),
+            }
+            if idx < top_k and item.get("execution_success") and item.get("probe_score_value") is not None:
+                selected.append(target)
+            else:
+                rejected.append(
+                    {
+                        "proposal_id": item.get("proposal_id"),
+                        "reason": (
+                            f"probe did not place in top_k or failed "
+                            f"(execution_success={item.get('execution_success')}, "
+                            f"probe_score={item.get('probe_score_value')})"
+                        ),
+                    }
+                )
+        payload = {
+            "selection_summary": "Selected proposals are ranked by executed proxy_probe.py results; no LLM selector is used.",
+            "ranking": ranked,
+            "selected_proposals": selected,
+            "rejected_proposals": rejected,
+            "primary_proposal_id": selected[0]["proposal_id"] if selected else None,
+        }
+        self.save_and_log_states(
+            json.dumps(payload, indent=2, ensure_ascii=False),
+            "research/research_selection.json",
+        )
+        self.save_and_log_states(
+            json.dumps({"probe_results": ranked}, indent=2, ensure_ascii=False),
+            "research/proxy_probe_results.json",
+        )
+        return payload
+
+    def _extract_experiment_metrics(self, experiment_entry: Dict[str, Any], data_contract: Dict[str, Any]) -> Dict[str, Any]:
+        generation = experiment_entry.get("generation") or {}
+        execution = experiment_entry.get("execution") or {}
+        script_path = generation.get("path")
+        experiment_dir = Path(script_path).parent if script_path else None
+        metrics = {}
+        primary_metric_name = None
+        primary_metric_value = None
+
+        if experiment_dir:
+            metrics_file = experiment_dir / "experiment_metrics.json"
+            if metrics_file.exists():
+                try:
+                    payload = json.loads(metrics_file.read_text(encoding="utf-8"))
+                    metrics = payload.get("all_metrics") or {}
+                    primary_metric_name = payload.get("primary_metric_name")
+                    primary_metric_value = payload.get("primary_metric_value")
+                except Exception:
+                    pass
+
+        text = "\n".join([(execution.get("stdout") or ""), (execution.get("stderr") or "")]).strip()
+        if text:
+            name_match = re.findall(r"PRIMARY_METRIC_NAME\s*:\s*([A-Za-z0-9_\-\.]+)", text, flags=re.IGNORECASE)
+            value_match = re.findall(r"PRIMARY_METRIC_VALUE\s*:\s*([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)", text, flags=re.IGNORECASE)
+            if name_match and primary_metric_name is None:
+                primary_metric_name = name_match[-1].strip().lower()
+            if value_match and primary_metric_value is None:
+                try:
+                    primary_metric_value = float(value_match[-1])
+                except Exception:
+                    pass
+
+            generic_matches = re.findall(
+                r"\b(accuracy|acc|f1(?:_score)?|roc_auc|auc|rmse|mae|mse|r2|precision|recall|logloss|log_loss|validation_score)\b\s*[:=]\s*([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)",
+                text,
+                flags=re.IGNORECASE,
+            )
+            for raw_name, raw_value in generic_matches:
+                name = raw_name.lower().replace("acc", "accuracy").replace("f1_score", "f1").replace("logloss", "log_loss")
+                try:
+                    metrics[name] = float(raw_value)
+                except Exception:
+                    continue
+
+        if primary_metric_name and primary_metric_value is not None:
+            metrics.setdefault(primary_metric_name, float(primary_metric_value))
+
+        preferred_metrics = []
+        modeling_guideline = data_contract.get("modeling_guideline") or {}
+        for item in (modeling_guideline.get("eval_metrics") or []):
+            preferred_metrics.append(str(item).strip().lower())
+        if not preferred_metrics:
+            task_type = str(data_contract.get("task_type") or "").lower()
+            if "regression" in task_type:
+                preferred_metrics = ["rmse", "mae", "mse", "r2", "validation_score"]
+            else:
+                preferred_metrics = ["f1", "accuracy", "roc_auc", "auc", "precision", "recall", "validation_score", "log_loss"]
+
+        if primary_metric_name is None or primary_metric_value is None:
+            for metric_name in preferred_metrics:
+                if metric_name in metrics:
+                    primary_metric_name = metric_name
+                    primary_metric_value = metrics[metric_name]
+                    break
+
+        minimizing = {"rmse", "mae", "mse", "log_loss"}
+        comparable_score = None
+        if primary_metric_name is not None and primary_metric_value is not None:
+            comparable_score = -float(primary_metric_value) if primary_metric_name in minimizing else float(primary_metric_value)
+
+        return {
+            "primary_metric_name": primary_metric_name,
+            "primary_metric_value": primary_metric_value,
+            "comparable_score": comparable_score,
+            "all_metrics": metrics,
+        }
+
+    def _select_best_experiment_quantitatively(
+        self,
+        experiment_results: List[Dict[str, Any]],
+        data_contract: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        ranked = []
+        for entry in experiment_results:
+            execution = entry.get("execution") or {}
+            metrics = self._extract_experiment_metrics(entry, data_contract)
+            probe_score = 0.0
+            selection_meta = entry.get("selection_meta") or {}
+            try:
+                probe_score = float(selection_meta.get("probe_score", 0.0))
+            except Exception:
+                probe_score = 0.0
+
+            comparable_score = metrics.get("comparable_score")
+            combined_score = None
+            if comparable_score is not None:
+                combined_score = 0.85 * float(comparable_score) + 0.15 * probe_score
+
+            ranked.append(
+                {
+                    "proposal_id": entry.get("proposal_id"),
+                    "execution_success": bool(execution.get("success")),
+                    "primary_metric_name": metrics.get("primary_metric_name"),
+                    "primary_metric_value": metrics.get("primary_metric_value"),
+                    "comparable_score": comparable_score,
+                    "probe_score": probe_score,
+                    "combined_score": combined_score,
+                    "all_metrics": metrics.get("all_metrics", {}),
+                }
+            )
+
+        successful_ranked = [x for x in ranked if x["execution_success"] and x["combined_score"] is not None]
+        successful_ranked.sort(key=lambda item: (item.get("combined_score", float("-inf")), item.get("probe_score", 0.0)), reverse=True)
+        best = successful_ranked[0] if successful_ranked else None
+        payload = {
+            "selection_method": "quantitative",
+            "ranking": ranked,
+            "best_proposal": best,
+        }
+        self.save_and_log_states(
+            json.dumps(payload, indent=2, ensure_ascii=False),
+            "research/final_experiment_selection.json",
+        )
+        return payload
+
+    def _run_post_baseline_research(self, iteration_type: str | None = None) -> Dict[str, Any]:
+        settings = self.get_post_baseline_settings()
+        if not settings.get("enabled", True):
+            return {"status": "skipped", "reason": "post-baseline research disabled"}
+
+        if not getattr(self, "preprocessing_code", None) or not getattr(self, "modeling_code", None):
+            logger.info("Post-baseline research skipped because modular preprocessing/modeling code is unavailable.")
+            return {"status": "skipped", "reason": "modular baseline code unavailable"}
+
+        materialized = self._materialize_research_workspace(iteration_type=iteration_type)
+        data_contract = self._build_data_contract(iteration_type=iteration_type, materialized=materialized)
+        baseline_summary = self._build_baseline_summary(iteration_type=iteration_type, materialized=materialized)
+        workspace_dir = materialized["workspace_dir"]
+
+        self._write_workspace_file(
+            Path(materialized["metadata_dir"]) / "data_contract.json",
+            json.dumps(data_contract, indent=2, ensure_ascii=False),
+        )
+        self._write_workspace_file(
+            Path(materialized["metadata_dir"]) / "baseline_summary.json",
+            json.dumps(baseline_summary, indent=2, ensure_ascii=False),
+        )
+
+        cache_builder_result = self.cache_builder_agent(
+            description_analysis=getattr(self, "description_analysis", {}) or {},
+            data_contract=data_contract,
+            preprocessing_code=self.preprocessing_code,
+            workspace_dir=workspace_dir,
+            iteration_type=iteration_type,
+        )
+        cache_builder_execution = None
+        if cache_builder_result.get("status") == "success":
+            cache_builder_execution = self.execute_existing_python_script(
+                script_path=cache_builder_result["path"],
+                phase_name="research/cache_builder",
+                attempt=1,
+                cwd=workspace_dir,
+            )
+        if cache_builder_result.get("status") != "success" or not (cache_builder_execution or {}).get("success"):
+            summary = {
+                "status": "failed",
+                "stage": "cache_builder",
+                "workspace_dir": workspace_dir,
+                "cache_builder": cache_builder_result,
+                "cache_builder_execution": cache_builder_execution,
+            }
+            self._append_research_memory(workspace_dir, summary)
+            return summary
+
+        proposals = self.research_planner_agent(
+            baseline_summary=baseline_summary,
+            data_contract=data_contract,
+            guideline=getattr(self, "guideline", {}) or {},
+            task_context=getattr(self, "task_context", {}) or {},
+            iteration_type=iteration_type,
+            max_proposals=settings["max_proposals"],
+        )
+        if "error" in proposals:
+            summary = {
+                "status": "failed",
+                "stage": "research_planner",
+                "error": proposals.get("error"),
+                "workspace_dir": workspace_dir,
+                "cache_builder": cache_builder_result,
+                "cache_builder_execution": cache_builder_execution,
+            }
+            self._append_research_memory(workspace_dir, summary)
+            return summary
+
+        proxy_probe_runs = []
+        for proposal in (proposals or {}).get("proposals", []) or []:
+            proposal_id = proposal.get("proposal_id") or f"exp_{len(proxy_probe_runs) + 1:03d}"
+            experiment_dir = Path(workspace_dir) / "experiments" / proposal_id
+            experiment_dir.mkdir(parents=True, exist_ok=True)
+            probe_path = experiment_dir / "proxy_probe.py"
+            self._write_workspace_file(
+                probe_path,
+                build_proxy_probe_script(
+                    proposal=proposal,
+                    data_contract=data_contract,
+                    iteration_type=iteration_type,
+                ),
+            )
+            execution = self.execute_existing_python_script(
+                script_path=probe_path,
+                phase_name=f"research/proxy_probe/{proposal_id}",
+                attempt=1,
+                cwd=str(experiment_dir),
+            )
+            proxy_probe_runs.append(
+                {
+                    "proposal_id": proposal_id,
+                    "proposal": proposal,
+                    "path": str(probe_path),
+                    "execution": execution,
+                }
+            )
+
+        selection = self._select_proposals_quantitatively(
+            proposals=proposals,
+            probe_results=proxy_probe_runs,
+            top_k=settings["top_k"],
+        )
+        if "error" in selection:
+            summary = {
+                "status": "failed",
+                "stage": "research_selector",
+                "error": selection.get("error"),
+                "workspace_dir": workspace_dir,
+                "cache_builder": cache_builder_result,
+                "cache_builder_execution": cache_builder_execution,
+                "proposals": proposals,
+                "proxy_probe_runs": proxy_probe_runs,
+            }
+            self._append_research_memory(workspace_dir, summary)
+            return summary
+
+        selected_entries = selection.get("selected_proposals", []) or []
+        experiment_results = []
+        if settings.get("generate_experiment_code", True):
+            for entry in selected_entries:
+                proposal = self._find_proposal_by_id(proposals, entry.get("proposal_id"))
+                if not proposal:
+                    continue
+                generation = self.experiment_coder_agent(
+                    proposal=proposal,
+                    baseline_summary=baseline_summary,
+                    data_contract=data_contract,
+                    baseline_modeling_code=self.modeling_code,
+                    workspace_dir=workspace_dir,
+                    iteration_type=iteration_type,
+                )
+                execution = None
+                if generation.get("status") == "success":
+                    execution = self.execute_existing_python_script(
+                        script_path=generation["path"],
+                        phase_name=f"research/experiments/{proposal.get('proposal_id', 'unknown')}",
+                        attempt=1,
+                        cwd=str(Path(generation["path"]).parent),
+                    )
+                experiment_results.append(
+                    {
+                        "proposal_id": proposal.get("proposal_id"),
+                        "generation": generation,
+                        "execution": execution,
+                        "selection_meta": entry,
+                    }
+                )
+
+        final_selection = self._select_best_experiment_quantitatively(
+            experiment_results=experiment_results,
+            data_contract=data_contract,
+        )
+
+        summary = {
+            "status": "success",
+            "workspace_dir": workspace_dir,
+            "cache_builder": cache_builder_result,
+            "cache_builder_execution": cache_builder_execution,
+            "num_proposals": len((proposals or {}).get("proposals", []) or []),
+            "selected_primary_proposal_id": selection.get("primary_proposal_id"),
+            "selected_proposals": selection.get("selected_proposals", []),
+            "proxy_probe_runs": proxy_probe_runs,
+            "experiment_results": experiment_results,
+            "final_selection": final_selection,
+        }
+        self._write_workspace_file(
+            Path(materialized["metadata_dir"]) / "research_phase_summary.json",
+            json.dumps(summary, indent=2, ensure_ascii=False),
+        )
+        self._append_research_memory(
+            workspace_dir,
+            {
+                "timestamp": datetime.now().isoformat(),
+                "iteration_type": iteration_type or "default",
+                **summary,
+            },
+        )
+        return summary
 
     def _prepare_guideline(self, iteration_type: str = None) -> bool:
         """
@@ -508,6 +1126,7 @@ class Manager:
                             cand_submission = candidate_dir / "submission.csv"
                             if cand_submission.exists():
                                 any_success = True
+                                self._run_post_baseline_research(iteration_type=iteration_type)
                                 try:
                                     dst_archive = parent_iter_dir / f"submission_cand_{idx}.csv"
                                     shutil.copy2(cand_submission, dst_archive)
@@ -580,6 +1199,7 @@ class Manager:
                 return False
             self.assembled_code = assembler_result.get("code")
             logger.info("Final script generated and executed successfully.")
+            self._run_post_baseline_research(iteration_type=iteration_type)
             
             return True
             
@@ -813,6 +1433,7 @@ class Manager:
                 return False
             self.assembled_code = assembler_result.get("code")
             logger.info("Initial script generated and executed successfully.")
+            self._run_post_baseline_research(iteration_type="default")
 
         logger.info("AutoML pipeline completed successfully!")
         return True
@@ -1339,6 +1960,7 @@ class Manager:
                         cand_submission = candidate_dir / "submission.csv"
                         if cand_submission.exists():
                             any_success = True
+                            self._run_post_baseline_research(iteration_type=iteration_type)
                             try:
                                 dst_archive = parent_iter_dir / f"submission_cand_{idx}.csv"
                                 shutil.copy2(cand_submission, dst_archive)
@@ -1397,6 +2019,7 @@ class Manager:
             return False
         self.assembled_code = assembler_result.get("code")
         logger.info("Final script generated and executed successfully.")
+        self._run_post_baseline_research(iteration_type=iteration_type)
         
         return True
 
@@ -1469,12 +2092,82 @@ class Manager:
         
         self.assembled_code = assembler_result.get("code")
         logger.info(f"Initial script generated and executed successfully.")
+        self._run_post_baseline_research(iteration_type="default")
 
         logger.info("AutoML pipeline completed successfully!")
 
     def write_code_script(self, script, output_code_file):
         with open(output_code_file, "w") as file:
             file.write(script)
+
+    def execute_existing_python_script(
+        self,
+        script_path: str | Path,
+        phase_name: str,
+        attempt: int = 1,
+        cwd: str | None = None,
+    ) -> dict:
+        """
+        Execute an already materialized Python script in-place and store stdout/stderr
+        under the standard states folder.
+        """
+        script_path = Path(script_path)
+        attempt_dir = Path(self.output_folder) / "states" / phase_name / f"attempt_{attempt}"
+        attempt_dir.mkdir(parents=True, exist_ok=True)
+        stdout_path = attempt_dir / "stdout.txt"
+        stderr_path = attempt_dir / "stderr.txt"
+
+        def _record_and_return(result: dict) -> dict:
+            self.latest_execution_result = {
+                "phase_name": phase_name,
+                "attempt": attempt,
+                "script_path": str(script_path),
+                **result,
+            }
+            return result
+
+        if not script_path.exists():
+            return _record_and_return(
+                {"success": False, "stdout": "", "stderr": f"Script not found: {script_path}"}
+            )
+
+        try:
+            run_cwd = cwd or str(script_path.parent)
+            completed = subprocess.run(
+                [sys.executable, str(script_path)],
+                cwd=run_cwd,
+                text=True,
+                capture_output=True,
+                timeout=self.config.per_execution_timeout,
+            )
+            stdout = completed.stdout or ""
+            stderr = completed.stderr or ""
+            stdout_path.write_text(stdout, encoding="utf-8")
+            stderr_path.write_text(stderr, encoding="utf-8")
+            if completed.returncode == 0:
+                return _record_and_return({"success": True, "stdout": stdout, "stderr": stderr})
+            return _record_and_return(
+                {
+                    "success": False,
+                    "stdout": stdout,
+                    "stderr": f"STDOUT:\n{stdout}\n\nSTDERR:\n{stderr}",
+                }
+            )
+        except subprocess.TimeoutExpired as exc:
+            stdout = exc.stdout or ""
+            stderr = exc.stderr or ""
+            stdout_path.write_text(stdout, encoding="utf-8")
+            stderr_path.write_text(stderr, encoding="utf-8")
+            return _record_and_return(
+                {
+                    "success": False,
+                    "stdout": stdout,
+                    "stderr": f"Process reached time limit after {self.config.per_execution_timeout} seconds.\n\n{stderr}",
+                }
+            )
+        except Exception as e:
+            stderr_path.write_text(str(e), encoding="utf-8")
+            return _record_and_return({"success": False, "stdout": "", "stderr": str(e)})
 
     def execute_code(self, code_to_execute: str, phase_name: str, attempt: int) -> dict:
         """
@@ -1501,15 +2194,23 @@ class Manager:
         # Write the code to the script file
         self.write_code_script(code_to_execute, str(script_path))
 
+        def _record_and_return(result: dict) -> dict:
+            self.latest_execution_result = {
+                "phase_name": phase_name,
+                "attempt": attempt,
+                **result,
+            }
+            return result
+
         # In static ablation mode, skip execution for intermediate phases
         skip_execution = self.is_static_mode() and phase_name not in {"assemble"}
         if skip_execution:
             logger.info(f"[iMLstatic] Skipping runtime execution for phase '{phase_name}'. Performing syntax check only.")
             try:
                 compile(code_to_execute, str(script_path), "exec")
-                return {"success": True, "stdout": "", "stderr": ""}
+                return _record_and_return({"success": True, "stdout": "", "stderr": ""})
             except SyntaxError as exc:
-                return {"success": False, "stdout": "", "stderr": f"SyntaxError: {exc}"}
+                return _record_and_return({"success": False, "stdout": "", "stderr": f"SyntaxError: {exc}"})
 
         logger.info(f"Executing code from: {script_path}")
 
@@ -1581,16 +2282,16 @@ class Manager:
 
             if process.returncode == 0:
                 logger.info("Code executed successfully.")
-                return {"success": True, "stdout": stdout, "stderr": stderr}
+                return _record_and_return({"success": True, "stdout": stdout, "stderr": stderr})
             else:
                 logger.error(f"Code execution failed with return code {process.returncode}.")
                 full_error = f"STDOUT:\n{stdout}\n\nSTDERR:\n{stderr}"
-                return {"success": False, "stdout": stdout, "stderr": full_error}
+                return _record_and_return({"success": False, "stdout": stdout, "stderr": full_error})
         except Exception as e:
             logger.error(f"An exception occurred during code execution: {e}")
             with open(stderr_path, "w") as f:
                 f.write(str(e))
-            return {"success": False, "stdout": "", "stderr": str(e)}
+            return _record_and_return({"success": False, "stdout": "", "stderr": str(e)})
 
 
     def update_python_code(self):
