@@ -462,7 +462,8 @@ class Manager:
         return max(0.0, min(1.0, value))
 
     def _extract_proxy_probe_metrics(self, probe_entry: Dict[str, Any]) -> Dict[str, Any]:
-        execution = probe_entry.get("execution") or {}
+        execution_wrapper = probe_entry.get("execution") or {}
+        execution = execution_wrapper.get("execution") if isinstance(execution_wrapper, dict) and "execution" in execution_wrapper else execution_wrapper
         probe_path = probe_entry.get("path")
         experiment_dir = Path(probe_path).parent if probe_path else None
         payload = {}
@@ -526,7 +527,8 @@ class Manager:
         ranked = []
         for entry in probe_results or []:
             metrics = self._extract_proxy_probe_metrics(entry)
-            execution = entry.get("execution") or {}
+            execution_wrapper = entry.get("execution") or {}
+            execution = execution_wrapper.get("execution") if isinstance(execution_wrapper, dict) and "execution" in execution_wrapper else execution_wrapper
             ranked.append(
                 {
                     "proposal_id": entry.get("proposal_id"),
@@ -593,7 +595,8 @@ class Manager:
 
     def _extract_experiment_metrics(self, experiment_entry: Dict[str, Any], data_contract: Dict[str, Any]) -> Dict[str, Any]:
         generation = experiment_entry.get("generation") or {}
-        execution = experiment_entry.get("execution") or {}
+        execution_wrapper = experiment_entry.get("execution") or {}
+        execution = execution_wrapper.get("execution") if isinstance(execution_wrapper, dict) and "execution" in execution_wrapper else execution_wrapper
         script_path = generation.get("path")
         experiment_dir = Path(script_path).parent if script_path else None
         metrics = {}
@@ -675,7 +678,8 @@ class Manager:
     ) -> Dict[str, Any]:
         ranked = []
         for entry in experiment_results:
-            execution = entry.get("execution") or {}
+            execution_wrapper = entry.get("execution") or {}
+            execution = execution_wrapper.get("execution") if isinstance(execution_wrapper, dict) and "execution" in execution_wrapper else execution_wrapper
             metrics = self._extract_experiment_metrics(entry, data_contract)
             probe_score = 0.0
             selection_meta = entry.get("selection_meta") or {}
@@ -748,13 +752,18 @@ class Manager:
         )
         cache_builder_execution = None
         if cache_builder_result.get("status") == "success":
-            cache_builder_execution = self.execute_existing_python_script(
+            cache_builder_execution = self.execute_existing_python_script_with_debug(
                 script_path=cache_builder_result["path"],
                 phase_name="research/cache_builder",
-                attempt=1,
                 cwd=workspace_dir,
+                required_paths=[
+                    Path(materialized["cache_dir"]) / "cache_manifest.json",
+                    Path(materialized["metadata_dir"]) / "cache_summary.json",
+                    Path(materialized["metadata_dir"]) / "preprocess_runtime_metadata.json",
+                ],
+                success_message="Cache builder executed successfully.",
             )
-        if cache_builder_result.get("status") != "success" or not (cache_builder_execution or {}).get("success"):
+        if cache_builder_result.get("status") != "success" or cache_builder_execution.get("status") != "success":
             summary = {
                 "status": "failed",
                 "stage": "cache_builder",
@@ -799,11 +808,12 @@ class Manager:
                     iteration_type=iteration_type,
                 ),
             )
-            execution = self.execute_existing_python_script(
+            execution = self.execute_existing_python_script_with_debug(
                 script_path=probe_path,
                 phase_name=f"research/proxy_probe/{proposal_id}",
-                attempt=1,
                 cwd=str(experiment_dir),
+                required_paths=[experiment_dir / "proxy_probe_result.json"],
+                success_message=f"Proxy probe executed successfully for {proposal_id}.",
             )
             proxy_probe_runs.append(
                 {
@@ -850,11 +860,15 @@ class Manager:
                 )
                 execution = None
                 if generation.get("status") == "success":
-                    execution = self.execute_existing_python_script(
+                    execution = self.execute_existing_python_script_with_debug(
                         script_path=generation["path"],
                         phase_name=f"research/experiments/{proposal.get('proposal_id', 'unknown')}",
-                        attempt=1,
                         cwd=str(Path(generation["path"]).parent),
+                        required_paths=[
+                            Path(generation["path"]).parent / "experiment_metrics.json",
+                            Path(generation["path"]).parent / "submission.csv",
+                        ],
+                        success_message=f"Research experiment executed successfully for {proposal.get('proposal_id', 'unknown')}.",
                     )
                 experiment_results.append(
                     {
@@ -2168,6 +2182,114 @@ class Manager:
         except Exception as e:
             stderr_path.write_text(str(e), encoding="utf-8")
             return _record_and_return({"success": False, "stdout": "", "stderr": str(e)})
+
+    def execute_existing_python_script_with_debug(
+        self,
+        script_path: str | Path,
+        phase_name: str,
+        cwd: str | None = None,
+        max_attempts: int = 3,
+        required_paths: List[str | Path] | None = None,
+        success_message: str | None = None,
+    ) -> dict:
+        """
+        Execute a materialized Python script, and if it fails, patch and retry it
+        through DebugAgent similarly to preprocessing/assemble phases.
+        """
+        script_path = Path(script_path)
+        required_path_objs = [Path(p) for p in (required_paths or [])]
+
+        def _validate_artifacts() -> bool:
+            return all(path.exists() for path in required_path_objs)
+
+        execution_result = self.execute_existing_python_script(
+            script_path=script_path,
+            phase_name=phase_name,
+            attempt=1,
+            cwd=cwd,
+        )
+        if execution_result.get("success") and _validate_artifacts():
+            if success_message:
+                logger.info(success_message)
+            return {
+                "status": "success",
+                "execution": execution_result,
+                "attempts": 1,
+                "script_path": str(script_path),
+            }
+
+        if not self.is_debug_enabled():
+            return {
+                "status": "failed",
+                "execution": execution_result,
+                "attempts": 1,
+                "script_path": str(script_path),
+                "error": execution_result.get("stderr") or "Script execution failed.",
+            }
+
+        try:
+            original_code = script_path.read_text(encoding="utf-8")
+        except Exception as exc:
+            return {
+                "status": "failed",
+                "execution": execution_result,
+                "attempts": 1,
+                "script_path": str(script_path),
+                "error": f"Could not read script for debug patching: {exc}",
+            }
+
+        datafile_structure = get_directory_structure(self.input_data_folder)
+        task_desc = self.build_debug_context(
+            stderr=execution_result.get("stderr") or "",
+            code=original_code,
+            phase_name=phase_name,
+            attempt=1,
+        )
+
+        def _executor(refined_code: str, refined_attempt_index: int) -> dict:
+            script_path.write_text(refined_code, encoding="utf-8")
+            return self.execute_existing_python_script(
+                script_path=script_path,
+                phase_name=phase_name,
+                attempt=refined_attempt_index,
+                cwd=cwd,
+            )
+
+        ok, patched, meta = self.debug_agent.llm_debug_fix(
+            code=original_code,
+            stderr=execution_result.get("stderr") or "",
+            phase_name=phase_name,
+            filename=script_path.stem,
+            attempt=1,
+            task_description=task_desc,
+            datafile_structure=datafile_structure,
+            executor=_executor,
+            success_validator=_validate_artifacts if required_path_objs else None,
+        )
+
+        if ok:
+            try:
+                script_path.write_text(patched, encoding="utf-8")
+            except Exception:
+                pass
+            if success_message:
+                logger.info(success_message)
+            return {
+                "status": "success",
+                "execution": meta.get("last_result") or execution_result,
+                "attempts": meta.get("last_attempt_index", 1),
+                "script_path": str(script_path),
+                "debug_meta": meta,
+            }
+
+        return {
+            "status": "failed",
+            "execution": meta.get("last_result") or execution_result,
+            "attempts": meta.get("last_attempt_index", 1),
+            "script_path": str(script_path),
+            "debug_meta": meta,
+            "error": (meta.get("last_result") or execution_result).get("stderr") if isinstance(meta, dict) else execution_result.get("stderr"),
+        }
 
     def execute_code(self, code_to_execute: str, phase_name: str, attempt: int) -> dict:
         """

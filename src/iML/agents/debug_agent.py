@@ -3,7 +3,7 @@ import os
 import json
 import difflib
 import logging
-from typing import Dict, Any, List, Tuple, Optional
+from typing import Dict, Any, List, Tuple, Optional, Callable
 
 from .base_agent import BaseAgent
 from ..llm import ChatLLMFactory
@@ -109,6 +109,41 @@ PHASE_NAME: {phase_name}
                     "PREPROCESSING PHASE REQUIREMENTS:",
                     "- The script must define preprocess_data(file_paths: dict) and return the contract-required artifacts.",
                     "- Do NOT write submission.csv in preprocessing phase.",
+                    *common,
+                ]
+            )
+
+        if "cache_builder" in p:
+            return "\n".join(
+                [
+                    "CACHE BUILDER PHASE REQUIREMENTS:",
+                    "- The script MUST build real cached artifacts from the dataset and write them under research_workspace/artifacts/cache.",
+                    "- The script MUST write metadata/cache_summary.json and metadata/preprocess_runtime_metadata.json.",
+                    "- Do NOT create fake cache files or placeholder payloads.",
+                    "- Do NOT write submission.csv in cache builder phase.",
+                    *common,
+                ]
+            )
+
+        if "proxy_probe" in p:
+            return "\n".join(
+                [
+                    "PROXY PROBE PHASE REQUIREMENTS:",
+                    "- The script MUST load cached artifacts and write proxy_probe_result.json in the experiment directory.",
+                    "- The probe score must be computed from real cached data for this proposal.",
+                    "- Do NOT fabricate metrics or write placeholder scores.",
+                    *common,
+                ]
+            )
+
+        if "research/experiments" in p or p == "experiment":
+            return "\n".join(
+                [
+                    "RESEARCH EXPERIMENT PHASE REQUIREMENTS:",
+                    "- The script MUST load cached artifacts and run the selected experiment candidate.",
+                    "- The script MUST write experiment_metrics.json in the experiment directory.",
+                    "- The script MUST write a non-empty submission.csv in the experiment directory.",
+                    "- If metrics or submission are missing, exit non-zero to trigger debugging.",
                     *common,
                 ]
             )
@@ -398,6 +433,8 @@ PHASE_NAME: {phase_name}
         datafile_structure: Optional[str] = None,
         require_submission: bool = False,
         submission_filename: Optional[str] = None,
+        executor: Optional[Callable[[str, int], Dict[str, Any]]] = None,
+        success_validator: Optional[Callable[[], bool]] = None,
     ) -> Tuple[bool, str, Dict[str, Any]]:
         """Two-stage LLM debug: summarize (no search) then refine (with google_search); loop up to max_rounds.
 
@@ -453,9 +490,17 @@ PHASE_NAME: {phase_name}
             # Save refined code snapshot into the attempt folder
             self.manager.save_and_log_states(refined, f"{phase_name}/attempt_{refined_attempt_index}/generated_code.py")
             # Run refined code
-            result = self.manager.execute_code(refined, f"{phase_name}", refined_attempt_index)
+            if executor is not None:
+                result = executor(refined, refined_attempt_index)
+            else:
+                result = self.manager.execute_code(refined, f"{phase_name}", refined_attempt_index)
             ok = bool(result.get("success"))
-            if ok and require_submission and phase_name == "assemble":
+            if ok and success_validator is not None:
+                try:
+                    ok = bool(success_validator())
+                except Exception:
+                    ok = False
+            elif ok and require_submission and phase_name == "assemble":
                 # Require artifact existence
                 out_dir = getattr(self.manager, 'output_folder', None) or "."
                 expected = submission_filename or "submission.csv"
