@@ -18,7 +18,6 @@ class ArchitectureRetrieverAgent(BaseAgent):
 
     def _build_task_summary(self, desc: Dict[str, Any], prof: Optional[Dict[str, Any]] = None) -> str:
         """Build a task summary for architecture search."""
-        task_type = desc.get("task_type") or "unknown"
         task = desc.get("task") or ""
         name = desc.get("name") or "dataset"
         
@@ -35,7 +34,7 @@ class ArchitectureRetrieverAgent(BaseAgent):
         
         return (
             f"Dataset: {name}\n"
-            f"Task: {task} ({task_type})"
+            f"Task: {task}"
             f"{data_shape}"
         )
 

@@ -8,8 +8,8 @@ class ProfilingLLMPrompt(BasePrompt):
     """
     Prompt to generate a SAFE, LIGHTWEIGHT dataset profiling script.
     The script must:
-    - read only from the provided allowed_files list
-    - print ONE JSON object between markers
+    - read only under DATASET_ROOT with bounded work (no arbitrary internet / no writes)
+    - print a human-readable profiling report between markers (optionally still valid JSON for compatibility)
     - never train models, never download, never write dataset files
     """
 
@@ -24,7 +24,7 @@ The script will be executed by the system. It MUST be safe and fast.
 DATASET_ROOT (absolute path):
 {dataset_root}
 
-ALLOWED_FILES (absolute paths; you MUST NOT read any other files):
+SYSTEM_SUGGESTED_FILES (absolute paths; hints only — you decide which paths are worth opening, and you may discover others under DATASET_ROOT within the safety rules below):
 ```json
 {allowed_files_json}
 ```
@@ -48,56 +48,46 @@ BASIC_PROFILES (JSON; sampled):
 ```
 
 ## PROFILING CONTRACT (STRICT)
-- Only use the ALLOWED_FILES list; do NOT scan the filesystem beyond it.
+- You MAY only read files that live under DATASET_ROOT (resolve paths; reject path traversal). Do not read outside this tree.
+- You decide which files to open: use SYSTEM_SUGGESTED_FILES as starting hints, then prioritize small, high-signal files (metadata, mappings, folds, labels, submission samples). You may skip redundant bulk files (e.g. not every image) unless needed to answer a concrete question.
+- Optional bounded discovery: you MAY list/walk under DATASET_ROOT with hard caps you implement in the script (e.g. max files inspected, max depth, skip files larger than a few MB except when clearly metadata). Never blindly read huge binaries fully.
 - No network calls. No downloading. No web search. No model training.
 - Do NOT write or modify any dataset files.
-- Reading policy:
+- Reading policy for anything you open:
   - tabular (csv/tsv/parquet/xlsx/json): read <= {tabular_nrows} rows per file max.
   - text: read <= {text_max_bytes} bytes per file max.
-  - images/audio: read metadata only (width/height/mode; wav sr/channels/duration).
+  - images: always safe to read **header/metadata** (format, size, mode, palette). Optionally, for **at most a few** representative images (cap e.g. 3–8 files, skip if file or decoded pixels would exceed a reasonable memory budget), load pixel data and report **useful low-level stats** (see below). Do not decode thousands of images.
+  - audio: metadata first (sample rate, channels, bit depth, duration via frame count). Optionally read a **short initial segment** of one file (e.g. first N frames) to estimate loudness/DC offset if cheap — cap N.
 - CORE METADATA PRIORITY (CRITICAL):
-  - You MUST prioritize extracting schemas/roles from small metadata files that define dataset contracts:
-    - folds/splits (cv, fold, split)
-    - labels/targets
-    - id-to-filename mapping
-    - class/species list / label vocabulary
-  - If multiple such files exist, extract from ALL of them (they are small).
-- The script MUST print exactly one JSON object between markers:
-  - Print a line: ===PROFILING_JSON_START===
-  - Print the JSON object (single JSON, can be pretty-printed)
-  - Print a line: ===PROFILING_JSON_END===
-- Other prints are allowed BUT the markers must exist and the JSON must be valid.
+  - Prioritize schemas/roles from small files that define dataset contracts: folds/splits, labels/targets, id-to-filename mapping, class/species lists.
+  - When several such files exist, prefer covering all small contract files over exhaustively profiling repetitive media.
 
-## REQUIRED OUTPUT JSON SCHEMA
-The JSON object MUST have these top-level keys:
-{{
-  "inventory": {{"counts_by_ext": object, "examples_by_ext": object}},
-  "samples": [{{"path": str, "rel_path": str, "extension": str}}],
-  "schemas": {{
-    "tabular": [{{"rel_path": str, "columns": [str], "dtypes": object, "nrows_sampled": int}}],
-    "text": [{{"rel_path": str, "kind": "tabular|text", "sniff": object}}],
-    "media": [{{"rel_path": str, "kind": "image|audio", "meta": object}}]
-  }},
-  "relational_signals": {{
-    "file_roles": [{{"rel_path": str, "role": "submission|labels|folds|id_mapping|class_list|unknown", "evidence": str}}],
-    "join_keys": [{{"key": str, "files": [str], "confidence": "low|medium|high", "notes": str}}],
-    "recommended_split_files": [str],
-    "recommended_label_files": [str],
-    "recommended_id_mapping_files": [str]
-  }},
-  "signals": {{
-    "candidate_train_files": [str],
-    "candidate_test_files": [str],
-    "candidate_submission_files": [str],
-    "notes": [str]
-  }}
-}}
+## USEFUL SIGNALS TO PRIORITIZE (WHEN FEASIBLE — STAY WITHIN CAPS ABOVE)
+- **Tabular**: column names, dtypes, obvious ID/label columns, row count estimate if cheap, missingness fraction on sampled rows, constant/near-constant columns, numeric ranges (min/max/mean) on a few columns, class counts for a label column if small cardinality.
+- **Images** (on the small sample you decode): width/height distribution in sample, color mode (L/RGB/RGBA), **per-channel or grayscale** mean/std/min/max (pixel intensity stats), approximate dynamic range; note if images are mostly black/white or low contrast; optional: simple uniqueness hint (e.g. all pixels identical → broken file).
+- **Audio**: duration, sample rate, mono/stereo, clipping hints if you peek samples; silence ratio on a short prefix if computed cheaply.
+- **Cross-file / task fit**: alignment between CSV `id` and image filenames, duplicate keys, train vs test column parity, submission column names vs label space.
+
+## WHAT TO REPORT (FREE FORM, YOUR CHOICE)
+- Output a clear **prose** profiling report (plain text). Structure it however helps: sections, bullet lists, short tables in text, etc.
+- Adapt depth to file type: rich but bounded — e.g. tabular schema + quick stats; for images combine **metadata for many** with **pixel-level stats for a tiny sample**; head/snippet for tiny text configs.
+- Include any **interesting, task-relevant** observations (join keys, ID formats, leakage risks, class imbalance hints, duplicate IDs, etc.) when evidence exists in the sampled data.
+- You may still output valid JSON between the markers instead of prose if you prefer, but there is **no** required JSON schema — content quality matters more than shape.
+
+## OUTPUT MARKERS (CRITICAL)
+The script MUST print exactly one block between these lines (prose or JSON):
+- Print a line: ===PROFILING_REPORT_START===
+- Print the report body (single coherent block; if JSON, it must be valid JSON)
+- Print a line: ===PROFILING_REPORT_END===
+Other stdout before/after is allowed, but the marked block must exist.
+
+Legacy compatibility: ===PROFILING_JSON_START=== / ===PROFILING_JSON_END=== are also acceptable if you emit JSON.
 
 ## IMPLEMENTATION NOTES
 - Use stdlib where possible.
-- You MAY use pandas if available. If pandas isn't available, still produce a valid JSON with best-effort signals.
-- For images: try Pillow (PIL). If not available, record an error in meta and continue.
-- For wav: use stdlib wave.
+- You MAY use pandas if available; otherwise use csv or best-effort parsing.
+- For images: try Pillow (PIL); **numpy** (`numpy.asarray(image)`) is fine for mean/std on the small decoded sample. If libraries are missing, report metadata only and say so.
+- For wav: use stdlib wave; for other audio formats, metadata-only unless a safe reader exists in the environment.
 
 ## OUTPUT FORMAT (CRITICAL)
 - Output ONLY a Python script. No markdown fences.

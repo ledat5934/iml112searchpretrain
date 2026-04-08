@@ -65,7 +65,8 @@ MUST OUTPUT ONLY VALID JSON with these keys:
 
 Rules:
 - Use the provided profiling_result JSON (including llm_profiling/basic_profiles if present) to infer signals succinctly.
-- Prefer FACTS from schemas/relational_signals over guesses. If a key file exists, cite its rel_path and columns/dtypes.
+- If llm_profiling contains a freeform prose report (freeform_report), treat it as first-class evidence alongside structured fields.
+- Prefer FACTS from schemas/relational_signals and the freeform report over guesses. If a key file exists, cite its rel_path and columns/dtypes.
 - Pay special attention to split/label/mapping files; missing these causes downstream hallucinations.
 - If unsure, set fields to null and explain briefly in notes.
 - Do NOT output markdown fences. Output pure JSON only.
@@ -95,6 +96,12 @@ RAW_PROFILING:
         llm_schemas = (llm_prof.get("schemas", {}) or {}) if isinstance(llm_prof, dict) else {}
         llm_rel = (llm_prof.get("relational_signals", {}) or {}) if isinstance(llm_prof, dict) else {}
         llm_signals = (llm_prof.get("signals", {}) or {}) if isinstance(llm_prof, dict) else {}
+        llm_freeform = ""
+        if isinstance(llm_prof, dict):
+            if llm_prof.get("format") == "text" and llm_prof.get("report"):
+                llm_freeform = str(llm_prof.get("report") or "")[:12000]
+            elif llm_prof.get("report") and not llm_schemas:
+                llm_freeform = str(llm_prof.get("report") or "")[:12000]
 
         # Limit sizes to keep prompt manageable
         def _take_list(x, n: int):
@@ -133,7 +140,8 @@ RAW_PROFILING:
             # Keep only a few basic_profiles entries to hint modality; details are in llm_prof
             "basic_profiles_sample": _take_list(basic_profiles, 10),
             "llm_profiling": {
-                "inventory": llm_prof.get("inventory"),
+                "inventory": llm_prof.get("inventory") if isinstance(llm_prof, dict) else None,
+                "freeform_report": llm_freeform or None,
                 "schemas": {"tabular": tabular_compact, "media": media},
                 "relational_signals": {
                     "file_roles": _take_list(llm_rel.get("file_roles", []), 30),
@@ -157,7 +165,6 @@ RAW_PROFILING:
         description = {
             "name": description_analysis.get("name"),
             "task": description_analysis.get("task"),
-            "task_type": description_analysis.get("task_type"),
             "output_data": description_analysis.get("output_data"),
         }
 

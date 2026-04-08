@@ -16,9 +16,11 @@ logger = logging.getLogger(__name__)
 class ProfilingLLMAgent(BaseAgent):
     """
     B2 profiler: LLM generates a dataset profiling script under a strict contract,
-    then we execute it and parse a single JSON object from stdout.
+    then we execute it and parse a profiling report (prose or JSON) from stdout.
     """
 
+    REPORT_START = "===PROFILING_REPORT_START==="
+    REPORT_END = "===PROFILING_REPORT_END==="
     JSON_START = "===PROFILING_JSON_START==="
     JSON_END = "===PROFILING_JSON_END==="
 
@@ -111,13 +113,16 @@ class ProfilingLLMAgent(BaseAgent):
 
         return found
 
-    def _extract_json_between_markers(self, stdout: str) -> Optional[str]:
-        if not stdout:
+    def _extract_between_markers(
+        self, stdout: str, start: str, end: str
+    ) -> Optional[str]:
+        if not stdout or start not in stdout or end not in stdout:
             return None
-        if self.JSON_START in stdout and self.JSON_END in stdout:
-            chunk = stdout.split(self.JSON_START, 1)[1].split(self.JSON_END, 1)[0]
-            return chunk.strip()
-        return None
+        chunk = stdout.split(start, 1)[1].split(end, 1)[0]
+        return chunk.strip()
+
+    def _extract_json_between_markers(self, stdout: str) -> Optional[str]:
+        return self._extract_between_markers(stdout, self.JSON_START, self.JSON_END)
 
     def _extract_best_json_object(self, text: str) -> Optional[str]:
         """
@@ -201,15 +206,43 @@ class ProfilingLLMAgent(BaseAgent):
         stdout = exec_result.get("stdout", "") or ""
         stderr = exec_result.get("stderr", "") or ""
 
-        extracted = self._extract_json_between_markers(stdout) or self._extract_best_json_object(stdout)
+        report_chunk = self._extract_between_markers(
+            stdout, self.REPORT_START, self.REPORT_END
+        )
+        json_chunk = self._extract_json_between_markers(stdout)
+
         parsed: Dict[str, Any]
-        if extracted:
-            try:
-                parsed = json.loads(extracted)
-            except Exception as e:
-                parsed = {"error": f"invalid_json: {e}", "raw_extracted": extracted, "stderr": stderr}
+        body = report_chunk or json_chunk
+        if body:
+            if body.lstrip().startswith("{"):
+                try:
+                    parsed = json.loads(body)
+                except Exception as e:
+                    parsed = {
+                        "format": "text",
+                        "report": body,
+                        "parse_note": f"json_expected_in_markers_but_invalid: {e}",
+                        "stderr": stderr,
+                    }
+            else:
+                parsed = {"format": "text", "report": body, "stderr": stderr}
         else:
-            parsed = {"error": "no_json_found_in_stdout", "stdout_head": stdout[:2000], "stderr": stderr}
+            fallback = self._extract_best_json_object(stdout)
+            if fallback:
+                try:
+                    parsed = json.loads(fallback)
+                except Exception as e:
+                    parsed = {
+                        "error": f"invalid_json: {e}",
+                        "raw_extracted": fallback,
+                        "stderr": stderr,
+                    }
+            else:
+                parsed = {
+                    "error": "no_profiling_block_found_in_stdout",
+                    "stdout_head": stdout[:2000],
+                    "stderr": stderr,
+                }
 
         # Attach meta for auditing
         parsed_meta = {
