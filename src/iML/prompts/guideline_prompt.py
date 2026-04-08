@@ -1,11 +1,86 @@
 # src/iML/prompts/guideline_prompt.py
 import json
 import logging
-from typing import Dict, Any
+import re
+from typing import Any, Dict, Optional
 
 from .base_prompt import BasePrompt
 
 logger = logging.getLogger(__name__)
+
+
+def _strip_bom(s: str) -> str:
+    if s.startswith("\ufeff"):
+        return s[1:]
+    return s
+
+
+def _strip_ansi_and_osc(s: str) -> str:
+    """Remove common ANSI/OSC sequences that can break json.loads if echoed into the reply."""
+    s = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", s)
+    s = re.sub(r"\x1b\][^\x07]*(?:\x07|\x1b\\)", "", s)
+    return s
+
+
+def _extract_fenced_json(s: str) -> str:
+    """Prefer ```json ... ``` or first ``` ... ``` block that looks like JSON."""
+    s = s.strip()
+    if "```json" in s:
+        inner = s.split("```json", 1)[1]
+        if "```" in inner:
+            return inner.split("```", 1)[0].strip()
+    if "```" in s:
+        chunks = s.split("```")
+        for i in range(1, len(chunks), 2):
+            block = chunks[i].strip()
+            if block.lower().startswith("json"):
+                block = block[4:].lstrip("\n").strip()
+            if "{" in block:
+                return block
+    return s
+
+
+def _extract_balanced_json_object(s: str) -> Optional[str]:
+    """Return the first top-level {...} substring with balanced braces (string-aware)."""
+    start = s.find("{")
+    if start == -1:
+        return None
+    depth = 0
+    in_string = False
+    escape = False
+    for i in range(start, len(s)):
+        c = s[i]
+        if in_string:
+            if escape:
+                escape = False
+            elif c == "\\":
+                escape = True
+            elif c == '"':
+                in_string = False
+            continue
+        if c == '"':
+            in_string = True
+        elif c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0:
+                return s[start : i + 1]
+    return None
+
+
+def _normalize_llm_json_text(response: str) -> str:
+    if not response or not str(response).strip():
+        return ""
+    s = _strip_bom(str(response).strip())
+    s = _strip_ansi_and_osc(s)
+    s = _extract_fenced_json(s)
+    s = s.strip()
+    if not s.startswith("{"):
+        extracted = _extract_balanced_json_object(s)
+        if extracted:
+            s = extracted
+    return s
 
 def _create_variables_summary(variables: dict) -> dict:
     """Create a concise summary for variables in the profile."""
@@ -374,13 +449,41 @@ IMPORTANT: Ensure the generated JSON is perfectly valid.
         return "\n".join(section_lines)
 
     def parse(self, response: str) -> Dict[str, Any]:
-        """Parse JSON response from LLM."""
-        try:
-            parsed_response = json.loads(response.strip().replace("```json", "").replace("```", ""))
-        except json.JSONDecodeError as e:
-            # Use local logger; manager.logger may not exist in some environments/checkpoints
-            logger.error(f"Failed to parse JSON from LLM response for guideline: {e}")
-            parsed_response = {"error": "Invalid JSON response from LLM", "raw_response": response}
+        """Parse JSON response from LLM (tolerates markdown fences, leading prose, minor noise)."""
+        normalized = _normalize_llm_json_text(response or "")
+        if not normalized:
+            logger.error("Failed to parse JSON from LLM response for guideline: empty or whitespace-only response")
+            parsed_response = {
+                "error": "Empty or non-JSON response from LLM",
+                "raw_response": response,
+            }
+        else:
+            try:
+                parsed_response = json.loads(normalized)
+            except json.JSONDecodeError as e:
+                # Last resort: balanced {...} inside normalized (handles trailing junk)
+                fallback = _extract_balanced_json_object(normalized)
+                if fallback and fallback != normalized:
+                    try:
+                        parsed_response = json.loads(fallback)
+                    except json.JSONDecodeError as e2:
+                        logger.error(
+                            "Failed to parse JSON from LLM response for guideline: %s (fallback also failed: %s)",
+                            e,
+                            e2,
+                        )
+                        parsed_response = {
+                            "error": "Invalid JSON response from LLM",
+                            "raw_response": response,
+                            "normalized_head": normalized[:4000],
+                        }
+                else:
+                    logger.error(f"Failed to parse JSON from LLM response for guideline: {e}")
+                    parsed_response = {
+                        "error": "Invalid JSON response from LLM",
+                        "raw_response": response,
+                        "normalized_head": normalized[:4000],
+                    }
         
         self.manager.save_and_log_states(
             json.dumps(parsed_response, indent=4, ensure_ascii=False), 
