@@ -1,4 +1,5 @@
 import json
+import re
 from typing import Dict, Any
 
 from .base_prompt import BasePrompt
@@ -6,6 +7,79 @@ from .base_prompt import BasePrompt
 
 class ProfilingSummarizerPrompt(BasePrompt):
     """Prompt to condense verbose profiling into compact JSON signals for pipeline."""
+
+    def _extract_best_json_object(self, text: str) -> str | None:
+        if not text:
+            return None
+
+        raw = text.strip()
+        if raw.startswith("{") and raw.endswith("}"):
+            return raw
+
+        fenced = re.search(r"```json\s*(\{.*?\})\s*```", raw, flags=re.S | re.I)
+        if fenced:
+            return fenced.group(1).strip()
+
+        starts = [m.start() for m in re.finditer(r"\{", raw)]
+        for start in reversed(starts[-80:]):
+            depth = 0
+            for end in range(start, len(raw)):
+                ch = raw[end]
+                if ch == "{":
+                    depth += 1
+                elif ch == "}":
+                    depth -= 1
+                    if depth == 0:
+                        chunk = raw[start : end + 1]
+                        try:
+                            json.loads(chunk)
+                            return chunk
+                        except Exception:
+                            break
+        return None
+
+    def _fallback_text_summary(self, response: str) -> Dict[str, Any]:
+        text = (response or "").strip()
+        notes = [line.strip("-* \t") for line in text.splitlines() if line.strip()]
+        notes = notes[:40]
+
+        return {
+            "dataset_name": None,
+            "task_type_hint": None,
+            "modalities": [],
+            "key_files": [],
+            "join_keys": [],
+            "data_split_hint": {
+                "train_files": [],
+                "test_files": [],
+                "sample_submission_file": None,
+                "fold_files": [],
+                "notes": notes[:10],
+            },
+            "label_analysis": {
+                "has_label_column": None,
+                "label_column": None,
+                "has_missing_labels": None,
+                "num_classes": None,
+                "class_distribution_imbalance": None,
+                "notes": notes[0] if notes else "LLM returned freeform text instead of JSON.",
+            },
+            "feature_quality": {
+                "high_missing_columns": [],
+                "constant_or_near_constant_cols": [],
+                "high_cardinality_categoricals": [],
+                "date_like_cols": [],
+            },
+            "id_format_analysis": {
+                "has_file_extensions": False,
+                "detected_extensions": [],
+                "format_notes": [],
+            },
+            "critical_warnings": [],
+            "notes": notes or ["LLM returned freeform text instead of valid JSON."],
+            "raw_text_summary": text[:12000],
+            "parse_mode": "text_fallback",
+        }
 
     def default_template(self) -> str:
         tmpl = (
@@ -180,6 +254,16 @@ RAW_PROFILING:
         try:
             clean = response.strip().replace("```json", "").replace("```", "")
             parsed = json.loads(clean)
+            return parsed
         except Exception:
-            parsed = {"error": "Invalid JSON from LLM", "raw_response": response}
+            pass
+
+        try:
+            extracted = self._extract_best_json_object(response)
+            if extracted:
+                return json.loads(extracted)
+        except Exception:
+            pass
+
+        parsed = self._fallback_text_summary(response)
         return parsed
