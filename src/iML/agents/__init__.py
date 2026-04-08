@@ -19,6 +19,7 @@ from .comparison_agent import ComparisonAgent
 from .debug_agent import DebugAgent
 from .monolithic_coder_agent import MonolithicCoderAgent
 from .prompt_decider_agent import PromptDeciderAgent
+from .research_phase_agent import ResearchPhaseAgent, ResearchPhaseConfig
 
 __all__ = [
     "BaseAgent",
@@ -40,4 +41,6 @@ __all__ = [
     "DebugAgent",
     "MonolithicCoderAgent",
     "PromptDeciderAgent",
+    "ResearchPhaseAgent",
+    "ResearchPhaseConfig",
 ]

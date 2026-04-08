@@ -30,6 +30,8 @@ from ..agents import (
     ComparisonAgent,
     DebugAgent,
     PromptDeciderAgent,
+    ResearchPhaseAgent,
+    ResearchPhaseConfig,
 )
 from ..agents.comparison_agent import IterationResultExtractor
 from ..llm import ChatLLMFactory
@@ -199,6 +201,34 @@ class Manager:
             config=config,
             manager=self,
             llm_config=self.config.assembler,
+        )
+        # Optional research phase (micro-mutations + proxy ranking)
+        research_cfg = getattr(self.config, "research_phase", None)
+        phase_cfg = ResearchPhaseConfig()
+        try:
+            if isinstance(research_cfg, dict):
+                phase_cfg.enabled = bool(research_cfg.get("enabled", phase_cfg.enabled))
+                phase_cfg.n_candidates = int(research_cfg.get("n_candidates", phase_cfg.n_candidates))
+                phase_cfg.proxy_time_budget_sec = int(research_cfg.get("proxy_time_budget_sec", phase_cfg.proxy_time_budget_sec))
+                phase_cfg.proxy_exec_timeout_sec = int(research_cfg.get("proxy_exec_timeout_sec", phase_cfg.proxy_exec_timeout_sec))
+                phase_cfg.top_k_full = int(research_cfg.get("top_k_full", phase_cfg.top_k_full))
+                phase_cfg.termination_grace_sec = int(research_cfg.get("termination_grace_sec", phase_cfg.termination_grace_sec))
+            elif research_cfg is not None:
+                # attribute-style config object
+                phase_cfg.enabled = bool(getattr(research_cfg, "enabled", phase_cfg.enabled))
+                phase_cfg.n_candidates = int(getattr(research_cfg, "n_candidates", phase_cfg.n_candidates))
+                phase_cfg.proxy_time_budget_sec = int(getattr(research_cfg, "proxy_time_budget_sec", phase_cfg.proxy_time_budget_sec))
+                phase_cfg.proxy_exec_timeout_sec = int(getattr(research_cfg, "proxy_exec_timeout_sec", phase_cfg.proxy_exec_timeout_sec))
+                phase_cfg.top_k_full = int(getattr(research_cfg, "top_k_full", phase_cfg.top_k_full))
+                phase_cfg.termination_grace_sec = int(getattr(research_cfg, "termination_grace_sec", phase_cfg.termination_grace_sec))
+        except Exception:
+            pass
+        research_llm_cfg = getattr(self.config, "research_phase_llm", None) or self.config.assembler
+        self.research_phase_agent = ResearchPhaseAgent(
+            config=config,
+            manager=self,
+            llm_config=research_llm_cfg,
+            phase_cfg=phase_cfg,
         )
         self.comparison_agent = ComparisonAgent(
             config=config,
@@ -580,6 +610,20 @@ class Manager:
                 return False
             self.assembled_code = assembler_result.get("code")
             logger.info("Final script generated and executed successfully.")
+
+            # Optional: research phase (3 micro-mutations, proxy rank, full run top-1)
+            try:
+                baseline_code = self.assembled_code or ""
+                research_out = self.research_phase_agent(
+                    baseline_code=baseline_code,
+                    iteration_type=iteration_type,
+                )
+                self.save_and_log_states(
+                    json.dumps(research_out, ensure_ascii=False, indent=2),
+                    "research/research_phase_result.json",
+                )
+            except Exception as e:
+                logger.warning(f"Research phase failed or skipped: {e}")
             
             return True
             
@@ -1397,6 +1441,20 @@ class Manager:
             return False
         self.assembled_code = assembler_result.get("code")
         logger.info("Final script generated and executed successfully.")
+
+        # Optional: research phase (3 micro-mutations, proxy rank, full run top-1)
+        try:
+            baseline_code = self.assembled_code or ""
+            research_out = self.research_phase_agent(
+                baseline_code=baseline_code,
+                iteration_type=iteration_type,
+            )
+            self.save_and_log_states(
+                json.dumps(research_out, ensure_ascii=False, indent=2),
+                "research/research_phase_result.json",
+            )
+        except Exception as e:
+            logger.warning(f"Research phase failed or skipped: {e}")
         
         return True
 
@@ -1476,7 +1534,15 @@ class Manager:
         with open(output_code_file, "w") as file:
             file.write(script)
 
-    def execute_code(self, code_to_execute: str, phase_name: str, attempt: int) -> dict:
+    def execute_code(
+        self,
+        code_to_execute: str,
+        phase_name: str,
+        attempt: int,
+        *,
+        timeout_sec: int | None = None,
+        termination_grace_sec: int = 2,
+    ) -> dict:
         """
         Executes a string of Python code in a subprocess and saves the script,
         stdout, and stderr to a structured attempts folder.
@@ -1533,14 +1599,14 @@ class Manager:
 
             streams = [process.stdout, process.stderr]
             start_time = time.time()
-            timeout = self.config.per_execution_timeout
+            timeout = int(timeout_sec) if timeout_sec is not None else int(self.config.per_execution_timeout)
 
             while streams:
                 elapsed = time.time() - start_time
                 remaining = max(0, timeout - elapsed)
                 if remaining <= 0:
                     process.terminate()
-                    time.sleep(2)
+                    time.sleep(max(0, int(termination_grace_sec)))
                     if process.poll() is None:
                         process.kill()
                     stderr_chunks.append(f"\nProcess reached time limit after {timeout} seconds.\n")

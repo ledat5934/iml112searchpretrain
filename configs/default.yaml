@@ -63,3 +63,17 @@ monolithic_coder:
 
 assembler:
   <<: *default_llm
+
+# Optional: research phase (micro-mutation + timeboxed proxy ranking)
+research_phase:
+  enabled: false
+  n_candidates: 3
+  proxy_time_budget_sec: 300
+  # Allow a bit more than proxy budget so the script can soft-stop and exit cleanly.
+  proxy_exec_timeout_sec: 330
+  top_k_full: 1
+  termination_grace_sec: 2
+
+# LLM config for research phase (defaults to assembler if omitted)
+research_phase_llm:
+  <<: *default_llm
