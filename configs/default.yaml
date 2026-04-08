@@ -66,7 +66,7 @@ assembler:
 
 # Optional: research phase (micro-mutation + timeboxed proxy ranking)
 research_phase:
-  enabled: false
+  enabled: true
   n_candidates: 3
   proxy_time_budget_sec: 300
   # Allow a bit more than proxy budget so the script can soft-stop and exit cleanly.
