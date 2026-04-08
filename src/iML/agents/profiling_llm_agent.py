@@ -144,6 +144,46 @@ class ProfilingLLMAgent(BaseAgent):
                     break
         return None
 
+    def _parse_stdout(self, stdout: str, stderr: str) -> Dict[str, Any]:
+        report_chunk = self._extract_between_markers(
+            stdout, self.REPORT_START, self.REPORT_END
+        )
+        json_chunk = self._extract_json_between_markers(stdout)
+
+        parsed: Dict[str, Any]
+        body = report_chunk or json_chunk
+        if body:
+            if body.lstrip().startswith("{"):
+                try:
+                    parsed = json.loads(body)
+                except Exception as e:
+                    parsed = {
+                        "format": "text",
+                        "report": body,
+                        "parse_note": f"json_expected_in_markers_but_invalid: {e}",
+                        "stderr": stderr,
+                    }
+            else:
+                parsed = {"format": "text", "report": body, "stderr": stderr}
+        else:
+            fallback = self._extract_best_json_object(stdout)
+            if fallback:
+                try:
+                    parsed = json.loads(fallback)
+                except Exception as e:
+                    parsed = {
+                        "error": f"invalid_json: {e}",
+                        "raw_extracted": fallback,
+                        "stderr": stderr,
+                    }
+            else:
+                parsed = {
+                    "error": "no_profiling_block_found_in_stdout",
+                    "stdout_head": stdout[:2000],
+                    "stderr": stderr,
+                }
+        return parsed
+
     def __call__(
         self,
         *,
@@ -203,46 +243,44 @@ class ProfilingLLMAgent(BaseAgent):
         self.manager.save_and_log_states(script, f"profiling_llm/attempt_{attempt}/generated_profiler.py")
 
         exec_result = self.manager.execute_code(script, "profiling_llm", attempt)
+        if not exec_result.get("success") and self.manager.is_debug_enabled():
+            error_message = exec_result.get("stderr", "") or ""
+            last_10_lines = error_message.split("\n")[-10:]
+            error_to_log = "\n".join(last_10_lines)
+            self.manager.save_and_log_states(
+                f"---ATTEMPT {attempt}---\nDATASET ROOT:\n{dataset_root}\n\nCODE:\n{script}\n\nERROR:\n{error_to_log}",
+                f"profiling_llm/attempt_{attempt}/failed.log",
+            )
+
+            filename = "code_generated"
+            task_desc = self.manager.build_debug_context(
+                stderr=error_message,
+                code=script,
+                phase_name="profiling_llm",
+                attempt=attempt,
+            )
+            ok, patched, meta = self.manager.debug_agent.llm_debug_fix(
+                code=script,
+                stderr=error_message,
+                phase_name="profiling_llm",
+                filename=filename,
+                attempt=attempt,
+                task_description=task_desc,
+                datafile_structure=datafile_structure,
+            )
+            if ok:
+                script = patched
+                exec_result = meta.get("last_result", {}) or exec_result
+                self.manager.save_and_log_states(
+                    script,
+                    "profiling_llm/final_generated_profiler.py",
+                )
+            else:
+                script = patched
+
         stdout = exec_result.get("stdout", "") or ""
         stderr = exec_result.get("stderr", "") or ""
-
-        report_chunk = self._extract_between_markers(
-            stdout, self.REPORT_START, self.REPORT_END
-        )
-        json_chunk = self._extract_json_between_markers(stdout)
-
-        parsed: Dict[str, Any]
-        body = report_chunk or json_chunk
-        if body:
-            if body.lstrip().startswith("{"):
-                try:
-                    parsed = json.loads(body)
-                except Exception as e:
-                    parsed = {
-                        "format": "text",
-                        "report": body,
-                        "parse_note": f"json_expected_in_markers_but_invalid: {e}",
-                        "stderr": stderr,
-                    }
-            else:
-                parsed = {"format": "text", "report": body, "stderr": stderr}
-        else:
-            fallback = self._extract_best_json_object(stdout)
-            if fallback:
-                try:
-                    parsed = json.loads(fallback)
-                except Exception as e:
-                    parsed = {
-                        "error": f"invalid_json: {e}",
-                        "raw_extracted": fallback,
-                        "stderr": stderr,
-                    }
-            else:
-                parsed = {
-                    "error": "no_profiling_block_found_in_stdout",
-                    "stdout_head": stdout[:2000],
-                    "stderr": stderr,
-                }
+        parsed = self._parse_stdout(stdout, stderr)
 
         # Attach meta for auditing
         parsed_meta = {
@@ -260,4 +298,3 @@ class ProfilingLLMAgent(BaseAgent):
 
         self.manager.log_agent_end("ProfilingLLMAgent: completed.")
         return {"result": parsed, "meta": parsed_meta, "exec": {"success": bool(exec_result.get("success"))}}
-
