@@ -40,32 +40,54 @@ def _extract_fenced_json(s: str) -> str:
     return s
 
 
-def _extract_balanced_json_object(s: str) -> Optional[str]:
-    """Return the first top-level {...} substring with balanced braces (string-aware)."""
-    start = s.find("{")
-    if start == -1:
-        return None
-    depth = 0
-    in_string = False
-    escape = False
-    for i in range(start, len(s)):
-        c = s[i]
-        if in_string:
-            if escape:
-                escape = False
-            elif c == "\\":
-                escape = True
-            elif c == '"':
-                in_string = False
+def _iter_balanced_json_objects(s: str):
+    """Yield top-level {...} substrings with balanced braces (string-aware)."""
+    for start, ch in enumerate(s):
+        if ch != "{":
             continue
-        if c == '"':
-            in_string = True
-        elif c == "{":
-            depth += 1
-        elif c == "}":
-            depth -= 1
-            if depth == 0:
-                return s[start : i + 1]
+        depth = 0
+        in_string = False
+        escape = False
+        for i in range(start, len(s)):
+            c = s[i]
+            if in_string:
+                if escape:
+                    escape = False
+                elif c == "\\":
+                    escape = True
+                elif c == '"':
+                    in_string = False
+                continue
+            if c == '"':
+                in_string = True
+            elif c == "{":
+                depth += 1
+            elif c == "}":
+                depth -= 1
+                if depth == 0:
+                    yield s[start : i + 1]
+                    break
+
+
+def _looks_like_guideline_json(chunk: str) -> bool:
+    if not chunk or not isinstance(chunk, str):
+        return False
+    # Avoid false positives such as "{id}" or format placeholders inside prose.
+    if '":' not in chunk:
+        return False
+    expected_keys = [
+        '"target_identification"',
+        '"modeling"',
+        '"preprocessing"',
+    ]
+    return any(k in chunk for k in expected_keys)
+
+
+def _extract_balanced_json_object(s: str) -> Optional[str]:
+    """Return the first plausible guideline JSON object from arbitrary text."""
+    for chunk in _iter_balanced_json_objects(s):
+        if _looks_like_guideline_json(chunk):
+            return chunk
     return None
 
 
@@ -76,7 +98,9 @@ def _normalize_llm_json_text(response: str) -> str:
     s = _strip_ansi_and_osc(s)
     s = _extract_fenced_json(s)
     s = s.strip()
-    if not s.startswith("{"):
+    if s.startswith("{") and _looks_like_guideline_json(s):
+        return s
+    if not s.startswith("{") or not _looks_like_guideline_json(s):
         extracted = _extract_balanced_json_object(s)
         if extracted:
             s = extracted
@@ -154,12 +178,14 @@ Before generating the final JSON, consider:
 6. Compile these specific actions into the required JSON format.
 
 
-Output Format: Your response must be in the JSON format below:
+Output Format: Your response must be a SINGLE valid JSON object matching the shape below.
 IMPORTANT: Ensure the generated JSON is perfectly valid.
 - All strings must be enclosed in double quotes.
 - All backslashes inside strings must be properly escaped.
 - There should be no unescaped newline characters within a string value.
 - Do not include comments within the JSON output.
+- Do not include markdown fences.
+- Do not include any prose before or after the JSON object.
 
 {{
     "target_identification": {{
@@ -173,7 +199,7 @@ IMPORTANT: Ensure the generated JSON is perfectly valid.
         "eval_metrics": ["metric"],
         "random_state": 42,
         "notes": "additional notes about model selection and training",
-        "IDs_in_submission_file_contain_file_extensions": true/false (MUST match the 'Submission format detected' from ID FORMAT ANALYSIS section above. If submission requires file extensions, set true; otherwise false. If no ID FORMAT ANALYSIS provided, infer from submission file description),
+        "IDs_in_submission_file_contain_file_extensions": true,
         "training_strategy": {{
             "approach": "SOTA training approach and techniques"
         }},
@@ -195,9 +221,8 @@ IMPORTANT: Ensure the generated JSON is perfectly valid.
             "columns": ["..."],
             "strategy_or_details": "..."
         }},
-        #Add some more preprocessing step here if neccessary.
         {{
-            "step": ,
+            "step": 3,
             "action": "data_splitting",
             "train_size": 0.8,
             "validation_size": 0.2,
@@ -206,7 +231,12 @@ IMPORTANT: Ensure the generated JSON is perfectly valid.
             "notes": "split data into train and validation sets"
         }}
     ]
-}}"""
+}}
+
+CRITICAL FINAL REMINDER:
+- Return JSON only.
+- If you are about to explain your answer in prose, do not do that; put the content into the JSON fields instead.
+""" 
 
     def build(
         self,
@@ -481,6 +511,14 @@ IMPORTANT: Ensure the generated JSON is perfectly valid.
                     logger.error(f"Failed to parse JSON from LLM response for guideline: {e}")
                     parsed_response = {
                         "error": "Invalid JSON response from LLM",
+                        "raw_response": response,
+                        "normalized_head": normalized[:4000],
+                    }
+            if isinstance(parsed_response, dict) and "error" not in parsed_response:
+                required = {"target_identification", "modeling", "preprocessing"}
+                if not required.issubset(set(parsed_response.keys())):
+                    parsed_response = {
+                        "error": "Guideline JSON missing required top-level keys",
                         "raw_response": response,
                         "normalized_head": normalized[:4000],
                     }
