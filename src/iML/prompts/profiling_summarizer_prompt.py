@@ -8,6 +8,81 @@ from .base_prompt import BasePrompt
 class ProfilingSummarizerPrompt(BasePrompt):
     """Prompt to condense verbose profiling into compact JSON signals for pipeline."""
 
+    def _compact_name_list(self, items: list[str], max_keep: int = 24) -> list[str]:
+        if not isinstance(items, list):
+            return []
+        names = [str(x) for x in items if x is not None]
+        if len(names) <= max_keep:
+            return names
+
+        def _prefix_num(name: str):
+            m = re.fullmatch(r"([A-Za-z_]+)(\d+)", name)
+            if not m:
+                return None
+            return m.group(1), int(m.group(2)), name
+
+        grouped: dict[str, list[tuple[int, str]]] = {}
+        leftovers: list[str] = []
+        for name in names:
+            parsed = _prefix_num(name)
+            if not parsed:
+                leftovers.append(name)
+                continue
+            prefix, num, original = parsed
+            grouped.setdefault(prefix, []).append((num, original))
+
+        compact: list[str] = []
+        for prefix, vals in grouped.items():
+            vals.sort(key=lambda x: x[0])
+            originals = [orig for _, orig in vals]
+            if len(originals) >= 6:
+                compact.extend([originals[0], originals[1], "...", originals[-2], originals[-1]])
+            else:
+                compact.extend(originals)
+
+        compact.extend(leftovers[: max(0, max_keep - len(compact))])
+        if len(compact) > max_keep:
+            compact = compact[: max_keep - 1] + ["..."]
+        return compact
+
+    def _compact_dtype_map(self, dtypes: Dict[str, Any], max_keep: int = 24) -> Dict[str, Any]:
+        if not isinstance(dtypes, dict):
+            return {}
+
+        items = list(dtypes.items())
+        if len(items) <= max_keep:
+            return dtypes
+
+        by_dtype: dict[str, list[str]] = {}
+        for col, dtype in items:
+            by_dtype.setdefault(str(dtype), []).append(str(col))
+
+        compact: Dict[str, Any] = {}
+        for dtype, cols in by_dtype.items():
+            compact_cols = self._compact_name_list(cols, max_keep=8)
+            if len(cols) >= 6:
+                key = ", ".join(compact_cols)
+                compact[key] = dtype
+            else:
+                for col in cols:
+                    compact[col] = dtype
+            if len(compact) >= max_keep:
+                break
+
+        if len(compact) > max_keep:
+            compact = dict(list(compact.items())[: max_keep - 1] + [("...", "...")])
+        return compact
+
+    def _compact_key_file_entry(self, item: Dict[str, Any]) -> Dict[str, Any]:
+        if not isinstance(item, dict):
+            return item
+        out = dict(item)
+        if "columns" in out:
+            out["columns"] = self._compact_name_list(out.get("columns") or [], max_keep=18)
+        if "dtypes" in out:
+            out["dtypes"] = self._compact_dtype_map(out.get("dtypes") or {}, max_keep=18)
+        return out
+
     def _extract_best_json_object(self, text: str) -> str | None:
         if not text:
             return None
@@ -142,6 +217,11 @@ Rules:
 - If llm_profiling contains a freeform prose report (freeform_report), treat it as first-class evidence alongside structured fields.
 - Prefer FACTS from schemas/relational_signals and the freeform report over guesses. If a key file exists, cite its rel_path and columns/dtypes.
 - Pay special attention to split/label/mapping files; missing these causes downstream hallucinations.
+- If a file has many repetitive columns with the same role/pattern, you MAY compact them using "..." instead of listing all columns.
+- Good examples:
+  - "columns": ["margin1", "margin2", "...", "margin63", "margin64"]
+  - "dtypes": {{"margin1, margin2, ..., margin63, margin64": "float64"}}
+- Prefer compact summaries over exhaustive column dumps when the omitted columns are clearly similar in role and dtype.
 - If unsure, set fields to null and explain briefly in notes.
 - Do NOT output markdown fences. Output pure JSON only.
 
@@ -188,6 +268,7 @@ RAW_PROFILING:
         tabular = [t for t in (tabular or []) if isinstance(t, dict)]
         tabular_meta_like = [t for t in tabular if str(t.get("rel_path", "")).lower().endswith((".txt", ".csv", ".tsv", ".json"))]
         tabular_compact = _take_list(tabular_meta_like, 25) or _take_list(tabular, 25)
+        tabular_compact = [self._compact_key_file_entry(t) for t in tabular_compact]
 
         # Light profiles from ydata_profiling output (can be huge)
         profiles_light = {}
