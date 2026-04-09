@@ -1,5 +1,6 @@
 # src/iML/prompts/task_schema_prompt.py
 import json
+import re
 from typing import Dict, Any
 
 from .base_prompt import BasePrompt
@@ -76,6 +77,45 @@ IMPORTANT:
 - If uncertain, set fields to "unknown" and add an assumption.
 """
 
+    def _compact_name_list(self, items: list[str], max_keep: int = 18) -> list[str]:
+        if not isinstance(items, list):
+            return []
+        names = [str(x) for x in items if x is not None]
+        if len(names) <= max_keep:
+            return names
+
+        compact: list[str] = []
+        groups: dict[str, list[tuple[int, str]]] = {}
+        leftovers: list[str] = []
+        for name in names:
+            m = re.fullmatch(r"([A-Za-z_]+)(\d+)", name)
+            if not m:
+                leftovers.append(name)
+                continue
+            groups.setdefault(m.group(1), []).append((int(m.group(2)), name))
+
+        for _, vals in groups.items():
+            vals.sort(key=lambda x: x[0])
+            originals = [orig for _, orig in vals]
+            if len(originals) >= 6:
+                compact.extend([originals[0], originals[1], "...", originals[-2], originals[-1]])
+            else:
+                compact.extend(originals)
+
+        compact.extend(leftovers)
+        if len(compact) > max_keep:
+            compact = compact[: max_keep - 1] + ["..."]
+        return compact
+
+    def _compact_profiling_summary(self, profiling_summary: Dict[str, Any]) -> Dict[str, Any]:
+        if not isinstance(profiling_summary, dict):
+            return profiling_summary
+        compact = json.loads(json.dumps(profiling_summary))
+        for item in compact.get("key_files", []) or []:
+            if isinstance(item, dict) and "columns" in item:
+                item["columns"] = self._compact_name_list(item.get("columns") or [])
+        return compact
+
     def build(
         self,
         description_text: str,
@@ -83,10 +123,11 @@ IMPORTANT:
         profiling_summary: Dict[str, Any],
         directory_structure: str,
     ) -> str:
+        profiling_summary_compact = self._compact_profiling_summary(profiling_summary or {})
         return self.template.format(
             description_text=description_text or "",
             description_analysis_json=json.dumps(description_analysis or {}, indent=2, ensure_ascii=False),
-            profiling_summary_json=json.dumps(profiling_summary or {}, indent=2, ensure_ascii=False),
+            profiling_summary_json=json.dumps(profiling_summary_compact, indent=2, ensure_ascii=False),
             directory_structure=directory_structure or "",
         )
 
