@@ -86,6 +86,11 @@ Examples:
         help="Override configs/default.yaml search_mode: 'hybrid' (ADK/web search when available) or "
              "'llm_only' (no external search; backbone LLM only).",
     )
+    parser.add_argument(
+        "--assembled-code-path",
+        default=None,
+        help="Optional path to a specific assembled Python file to use for resume/deployment flows.",
+    )
 
     args = parser.parse_args()
     
@@ -99,6 +104,7 @@ Examples:
         single_iteration=args.single_iteration,
         ablation_variant=args.ablation_variant,
         search_mode=args.search_mode,
+        assembled_code_path=args.assembled_code_path,
     )
 
 if __name__ == "__main__":

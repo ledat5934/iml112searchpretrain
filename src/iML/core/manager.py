@@ -91,6 +91,7 @@ class Manager:
         config: str,
         ablation_variant: str = None,
         search_mode: str | None = None,
+        assembled_code_path: str | None = None,
     ):
         """Initialize Manager with required paths and config from YAML file.
 
@@ -103,6 +104,7 @@ class Manager:
         self.output_folder = output_folder
         self.config = config
         self.ablation_variant = ablation_variant
+        self.assembled_code_path = assembled_code_path
         # Provide an instance logger for prompts/agents that expect manager.logger
         self.logger = logging.getLogger(__name__)
         # Search mode:
@@ -773,6 +775,143 @@ class Manager:
                 self.guideline = json.load(f)
             logger.info("Loaded guideline from checkpoint")
 
+        if self.assembled_code_path:
+            try:
+                assembled_code_override = Path(self.assembled_code_path)
+                if not assembled_code_override.exists():
+                    logger.error(f"Configured assembled code path does not exist: {assembled_code_override}")
+                else:
+                    self.assembled_code = assembled_code_override.read_text(encoding="utf-8")
+                    logger.info(f"Loaded assembled code from override path: {assembled_code_override}")
+            except Exception as e:
+                logger.error(f"Failed to load assembled code override from {self.assembled_code_path}: {e}")
+
+        preprocessing_code_file = os.path.join(states_dir, "preprocessing", "final_preprocessing_code.py")
+        if os.path.exists(preprocessing_code_file):
+            try:
+                with open(preprocessing_code_file, "r", encoding="utf-8") as f:
+                    self.preprocessing_code = f.read()
+                logger.info("Loaded preprocessing code from checkpoint")
+            except Exception as e:
+                logger.warning(f"Failed to load preprocessing code: {e}")
+
+        modeling_code_candidates = [
+            os.path.join(states_dir, "modeling", "final_modeling_code.py"),
+            os.path.join(states_dir, "modeling", "attempt_1", "generated_code.py"),
+        ]
+        for modeling_code_file in modeling_code_candidates:
+            if os.path.exists(modeling_code_file):
+                try:
+                    with open(modeling_code_file, "r", encoding="utf-8") as f:
+                        self.modeling_code = f.read()
+                    logger.info(f"Loaded modeling code from checkpoint: {modeling_code_file}")
+                    break
+                except Exception as e:
+                    logger.warning(f"Failed to load modeling code from {modeling_code_file}: {e}")
+
+        assembled_code_candidates = [
+            os.path.join(states_dir, "assemble", "final_executable_code.py"),
+            os.path.join(states_dir, "final_assembled_code.py"),
+            os.path.join(states_dir, "monolithic", "final_code.py"),
+        ]
+        if not getattr(self, "assembled_code", None):
+            for assembled_code_file in assembled_code_candidates:
+                if os.path.exists(assembled_code_file):
+                    try:
+                        with open(assembled_code_file, "r", encoding="utf-8") as f:
+                            self.assembled_code = f.read()
+                        logger.info(f"Loaded assembled code from checkpoint: {assembled_code_file}")
+                        break
+                    except Exception as e:
+                        logger.warning(f"Failed to load assembled code from {assembled_code_file}: {e}")
+
+    def _load_latest_deployment_workspace(self) -> Dict[str, Any] | None:
+        deployment_root = Path(self.output_folder) / "deployment"
+        if not deployment_root.exists():
+            return None
+
+        workspace_candidates = sorted(
+            [path for path in deployment_root.iterdir() if path.is_dir()],
+            key=lambda path: path.stat().st_mtime,
+            reverse=True,
+        )
+        for workspace_dir in workspace_candidates:
+            predictor_path = workspace_dir / "predictor.py"
+            api_path = workspace_dir / "api.py"
+            validate_path = workspace_dir / "validate_api.py"
+            schemas_path = workspace_dir / "schemas.py"
+            metadata_dir = workspace_dir / "metadata"
+            bundle_summary = metadata_dir / "deployment_summary.json"
+            return {
+                "workspace_dir": str(workspace_dir),
+                "predictor_path": str(predictor_path) if predictor_path.exists() else None,
+                "api_path": str(api_path) if api_path.exists() else None,
+                "validate_api_path": str(validate_path) if validate_path.exists() else None,
+                "schemas_path": str(schemas_path) if schemas_path.exists() else None,
+                "metadata_dir": str(metadata_dir),
+                "summary_path": str(bundle_summary),
+            }
+        return None
+
+    def _run_deployment_test_only(self, iteration_type: str | None = None) -> Dict[str, Any]:
+        workspace = self._load_latest_deployment_workspace()
+        if not workspace:
+            return {"status": "failed", "stage": "deployment_checkpoint_load", "error": "No deployment workspace found in output folder."}
+
+        predictor_path = workspace.get("predictor_path")
+        api_path = workspace.get("api_path")
+        schemas_path = workspace.get("schemas_path")
+        workspace_dir = workspace["workspace_dir"]
+        if not predictor_path or not api_path:
+            return {
+                "status": "failed",
+                "stage": "deployment_checkpoint_load",
+                "error": "predictor.py or api.py missing in latest deployment workspace.",
+                "workspace_dir": workspace_dir,
+            }
+
+        predictor_code = Path(predictor_path).read_text(encoding="utf-8")
+        api_code = Path(api_path).read_text(encoding="utf-8")
+        existing_validate = workspace.get("validate_api_path")
+        if existing_validate and Path(existing_validate).exists():
+            validate_path = existing_validate
+            logger.info(f"Using existing deployment validation script: {validate_path}")
+        else:
+            api_test = self.api_test_agent(
+                description_analysis=getattr(self, "description_analysis", {}) or {},
+                guideline=getattr(self, "guideline", {}) or {},
+                predictor_code=predictor_code,
+                api_code=api_code,
+                workspace_dir=workspace_dir,
+                iteration_type=iteration_type,
+            )
+            if api_test.get("status") != "success":
+                return {
+                    "status": "failed",
+                    "stage": "deployment_api_test_codegen",
+                    "workspace_dir": workspace_dir,
+                    "api_test": api_test,
+                }
+            validate_path = api_test["path"]
+
+        api_validation = self.execute_existing_python_script_with_debug(
+            script_path=validate_path,
+            phase_name="deployment/api_validation",
+            cwd=workspace_dir,
+        )
+        summary = {
+            "status": "success" if api_validation.get("status") == "success" else "failed",
+            "stage": "deployment_complete" if api_validation.get("status") == "success" else "deployment_api_validation",
+            "workspace_dir": workspace_dir,
+            "api_validation": api_validation,
+        }
+        metadata_dir = Path(workspace.get("metadata_dir") or Path(workspace_dir) / "metadata")
+        self._write_workspace_file(
+            metadata_dir / "deployment_summary.json",
+            json.dumps(summary, indent=2, ensure_ascii=False),
+        )
+        return summary
+
     def resume_pipeline_from_checkpoint(self, start_from="preprocessing"):
         """Resume pipeline from a specific checkpoint."""
         logger.info(f"Resuming AutoML pipeline from: {start_from}...")
@@ -787,7 +926,8 @@ class Manager:
             return False
         
         # For resume from guideline, we don't need existing guideline
-        if start_from != "guideline" and (not hasattr(self, 'guideline') or self.guideline is None):
+        starts_without_guideline = {"guideline", "deployment", "deployment_test"}
+        if start_from not in starts_without_guideline and (not hasattr(self, 'guideline') or self.guideline is None):
             logger.error(f"Cannot resume from {start_from}: guideline not found")
             logger.error("For this resume point, you need to have run until guideline generation")
             return False
@@ -859,6 +999,21 @@ class Manager:
             deployment_result = self._run_post_assembly_deployment(iteration_type="default")
             if deployment_result.get("status") == "failed":
                 logger.warning(f"Post-assembly deployment phase failed: {deployment_result.get('stage')}")
+
+        if start_from == "deployment":
+            if not getattr(self, "assembled_code", None):
+                logger.error("Cannot resume deployment: assembled code not found in checkpoint")
+                return False
+            deployment_result = self._run_post_assembly_deployment(iteration_type="default")
+            if deployment_result.get("status") == "failed":
+                logger.warning(f"Post-assembly deployment phase failed: {deployment_result.get('stage')}")
+                return False
+
+        if start_from == "deployment_test":
+            deployment_result = self._run_deployment_test_only(iteration_type="default")
+            if deployment_result.get("status") == "failed":
+                logger.warning(f"Deployment test phase failed: {deployment_result.get('stage')}")
+                return False
 
         logger.info("AutoML pipeline completed successfully!")
         return True
@@ -1343,10 +1498,7 @@ class Manager:
 
         bundle = self.deployment_refactor_agent(
             description_analysis=getattr(self, "description_analysis", {}) or {},
-            guideline=getattr(self, "guideline", {}) or {},
             task_schema=getattr(self, "task_schema", {}) or {},
-            preprocessing_code=getattr(self, "preprocessing_code", "") or "",
-            modeling_code=getattr(self, "modeling_code", "") or "",
             assembled_code=getattr(self, "assembled_code", "") or "",
             workspace_dir=workspace_dir,
             iteration_type=iteration_type,

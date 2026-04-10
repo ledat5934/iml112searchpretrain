@@ -31,6 +31,7 @@ def run_automl_pipeline(
     single_iteration: str = None,
     ablation_variant: str = None,
     search_mode: str | None = None,
+    assembled_code_path: str | None = None,
 ):
     """
     Main function to set up the environment and run the entire pipeline.
@@ -41,7 +42,8 @@ def run_automl_pipeline(
         config_path: Path to configuration file
         checkpoint_mode: "full" (complete run), "partial" (stop at checkpoint), or "resume" (continue from checkpoint)
         checkpoint_action: When partial mode - where to stop ("guideline", "profiling", "description")
-                          When resume mode - where to start ("preprocessing", "modeling", "assemble")
+                          When resume mode - where to start ("preprocessing", "modeling", "assemble", "deployment", "deployment_test")
+        assembled_code_path: Optional path to a specific assembled code file to load for resume/deployment flows
     """
     # 1. Create the output directory if one is not provided
     if output_folder is None:
@@ -85,6 +87,7 @@ def run_automl_pipeline(
             config=config,
             ablation_variant=ablation_variant,
             search_mode=search_mode,
+            assembled_code_path=assembled_code_path,
         )
 
         # 5. Start the pipeline run based on checkpoint mode

@@ -131,6 +131,11 @@ Advanced usage:
         default=None,
         help="Override config search_mode: hybrid (ADK/search) or llm_only (no external search).",
     )
+    parser.add_argument(
+        "--assembled-code-path",
+        default=None,
+        help="Optional path to a specific assembled Python file to use for resume/deployment flows.",
+    )
 
     args = parser.parse_args()
     
@@ -207,6 +212,7 @@ Advanced usage:
             checkpoint_mode=checkpoint_mode,
             checkpoint_action=checkpoint_action,
             search_mode=args.search_mode,
+            assembled_code_path=args.assembled_code_path,
         )
     except KeyboardInterrupt:
         print("\n⚠️  Pipeline interrupted by user")

@@ -13,38 +13,6 @@ class DeploymentRefactorPrompt(BasePrompt):
 You are a senior ML platform engineer.
 Refactor the generated training pipeline into a deployment-ready predictor bundle.
 
-## CONTEXT
-- Iteration type: {iteration_type}
-- Description analysis:
-```json
-{description_json}
-```
-
-- Guideline:
-```json
-{guideline_json}
-```
-
-- Task schema:
-```json
-{task_schema_json}
-```
-
-- Preprocessing code:
-```python
-{preprocessing_code}
-```
-
-- Modeling code:
-```python
-{modeling_code}
-```
-
-- Final assembled code:
-```python
-{assembled_code}
-```
-
 ## GOAL
 Generate a deployment bundle with:
 1. `predictor.py`
@@ -79,31 +47,50 @@ Return exactly this multi-file format:
 ===FILE: schemas.py===
 <python code>
 ===END FILE===
+
+Do not wrap the response in markdown fences.
+Do not add commentary before, between, or after the file blocks.
+
+## CONTEXT
+- Iteration type: {iteration_type}
+- Description analysis:
+```json
+{description_json}
+```
+
+- Task schema:
+```json
+{task_schema_json}
+```
+
+- Final assembled code:
+```python
+{assembled_code}
+```
 """
 
     def build(
         self,
         description_analysis: Dict[str, Any],
-        guideline: Dict[str, Any],
         task_schema: Dict[str, Any],
-        preprocessing_code: str,
-        modeling_code: str,
         assembled_code: str,
         iteration_type: str | None = None,
     ) -> str:
         prompt = self.template.format(
             iteration_type=iteration_type or "default",
             description_json=json.dumps(description_analysis or {}, indent=2, ensure_ascii=False),
-            guideline_json=json.dumps(guideline or {}, indent=2, ensure_ascii=False),
             task_schema_json=json.dumps(task_schema or {}, indent=2, ensure_ascii=False),
-            preprocessing_code=preprocessing_code or "",
-            modeling_code=modeling_code or "",
             assembled_code=assembled_code or "",
         )
         self.manager.save_and_log_states(prompt, "deployment/deployment_refactor_prompt.txt")
         return prompt
 
     def parse(self, response: str) -> Dict[str, str]:
+        response = (response or "").strip()
+        if response.startswith("```") and response.endswith("```"):
+            response = re.sub(r"^```[^\n]*\n?", "", response)
+            response = re.sub(r"\n?```$", "", response)
+
         pattern = re.compile(
             r"===FILE:\s*(?P<name>[^=]+?)===\s*(?P<content>.*?)===END FILE===",
             flags=re.DOTALL,
@@ -112,6 +99,9 @@ Return exactly this multi-file format:
         for match in pattern.finditer(response):
             name = match.group("name").strip()
             content = match.group("content").strip()
+            content = re.sub(r"^```(?:python)?\n?", "", content)
+            content = re.sub(r"\n?```$", "", content)
+            content = content.strip()
             files[name] = content + ("\n" if content and not content.endswith("\n") else "")
         if not files:
             raise ValueError("Could not parse deployment bundle files from LLM response.")

@@ -25,10 +25,7 @@ class DeploymentRefactorAgent(BaseAgent):
     def __call__(
         self,
         description_analysis: Dict[str, Any],
-        guideline: Dict[str, Any],
         task_schema: Dict[str, Any],
-        preprocessing_code: str,
-        modeling_code: str,
         assembled_code: str,
         workspace_dir: str,
         iteration_type: str | None = None,
@@ -36,10 +33,7 @@ class DeploymentRefactorAgent(BaseAgent):
         self.manager.log_agent_start("DeploymentRefactorAgent: generating deployment bundle...")
         prompt = self.prompt_handler.build(
             description_analysis=description_analysis,
-            guideline=guideline,
             task_schema=task_schema,
-            preprocessing_code=preprocessing_code,
-            modeling_code=modeling_code,
             assembled_code=assembled_code,
             iteration_type=iteration_type,
         )
