@@ -48,6 +48,8 @@ class AssemblerAgent(BaseAgent):
         # Combine initial code
         combined_code = preprocessing_code + "\n\n" + modeling_code
         submission_path = os.path.join(self.manager.output_folder, "submission.csv")
+        artifact_dir = str(self.manager.get_assembled_artifact_dir())
+        artifact_manifest_path = str(self.manager.get_assembled_artifact_manifest_path())
         error_message = None
         decided_fields = {}
         try:
@@ -69,6 +71,8 @@ class AssemblerAgent(BaseAgent):
             prompt = self.prompt_handler.build(
                 original_code=combined_code,
                 output_path=submission_path,
+                artifact_dir=artifact_dir,
+                artifact_manifest_path=artifact_manifest_path,
                 description=description,
                 error_message=error_message,
                 iteration_type=iteration_type,
@@ -106,9 +110,19 @@ class AssemblerAgent(BaseAgent):
                 if os.path.exists(submission_path):
                     logger.info("Final code executed successfully!")
                     logger.info(f"Submission file created at: {submission_path}")
+                    if os.path.exists(artifact_manifest_path):
+                        logger.info(f"Training artifact manifest created at: {artifact_manifest_path}")
+                    else:
+                        logger.warning(f"Training artifact manifest not found at: {artifact_manifest_path}")
                     self.manager.save_and_log_states(final_code, "assemble/final_executable_code.py")
                     self.manager.log_agent_end("Completed assembly and execution of code.")
-                    return {"status": "success", "code": final_code, "submission_path": submission_path}
+                    return {
+                        "status": "success",
+                        "code": final_code,
+                        "submission_path": submission_path,
+                        "artifact_dir": artifact_dir,
+                        "artifact_manifest_path": artifact_manifest_path,
+                    }
                 else:
                     logger.error("Execution returned success but submission.csv was not found. Will attempt debug fix.")
                     error_message = execution_result.get("stderr", "Missing submission.csv after run")
@@ -149,9 +163,19 @@ class AssemblerAgent(BaseAgent):
                         if os.path.exists(submission_path):
                             logger.info("Final code executed successfully after debug fixes (no re-run).")
                             logger.info(f"Submission file created at: {submission_path}")
+                            if os.path.exists(artifact_manifest_path):
+                                logger.info(f"Training artifact manifest created at: {artifact_manifest_path}")
+                            else:
+                                logger.warning(f"Training artifact manifest not found at: {artifact_manifest_path}")
                             self.manager.save_and_log_states(patched, "assemble/final_executable_code.py")
                             self.manager.log_agent_end("Completed assembly and execution of code.")
-                            return {"status": "success", "code": patched, "submission_path": submission_path}
+                            return {
+                                "status": "success",
+                                "code": patched,
+                                "submission_path": submission_path,
+                                "artifact_dir": artifact_dir,
+                                "artifact_manifest_path": artifact_manifest_path,
+                            }
                         else:
                             logger.error("DebugAgent reported success but submission.csv not found; continuing attempts.")
                     combined_code = patched if 'patched' in locals() else final_code
@@ -195,9 +219,19 @@ class AssemblerAgent(BaseAgent):
                     if os.path.exists(submission_path):
                         logger.info("Final code executed successfully after debug fixes (no re-run).")
                         logger.info(f"Submission file created at: {submission_path}")
+                        if os.path.exists(artifact_manifest_path):
+                            logger.info(f"Training artifact manifest created at: {artifact_manifest_path}")
+                        else:
+                            logger.warning(f"Training artifact manifest not found at: {artifact_manifest_path}")
                         self.manager.save_and_log_states(patched, "assemble/final_executable_code.py")
                         self.manager.log_agent_end("Completed assembly and execution of code.")
-                        return {"status": "success", "code": patched, "submission_path": submission_path}
+                        return {
+                            "status": "success",
+                            "code": patched,
+                            "submission_path": submission_path,
+                            "artifact_dir": artifact_dir,
+                            "artifact_manifest_path": artifact_manifest_path,
+                        }
                 # Update combined_code for next LLM fix loop using the best patched
                 combined_code = patched if 'patched' in locals() else final_code
 

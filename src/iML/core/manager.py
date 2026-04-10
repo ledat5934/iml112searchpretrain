@@ -317,6 +317,39 @@ class Manager:
         path.write_text(content or "", encoding="utf-8")
         return str(path)
 
+    def get_assembled_artifact_dir(self) -> Path:
+        return Path(self.output_folder) / "trained_artifacts"
+
+    def get_assembled_artifact_manifest_path(self) -> Path:
+        return self.get_assembled_artifact_dir() / "manifest.json"
+
+    def load_assembled_artifact_manifest(self) -> Dict[str, Any]:
+        manifest_path = self.get_assembled_artifact_manifest_path()
+        if not manifest_path.exists():
+            return {}
+        try:
+            return json.loads(manifest_path.read_text(encoding="utf-8"))
+        except Exception as e:
+            logger.warning(f"Failed to load assembled artifact manifest from {manifest_path}: {e}")
+            return {}
+
+    def describe_artifact_dir(self, artifact_dir: Path) -> Dict[str, Any]:
+        if not artifact_dir.exists():
+            return {"exists": False, "files": []}
+        files = []
+        for path in sorted([p for p in artifact_dir.rglob("*") if p.is_file()]):
+            try:
+                rel = path.relative_to(artifact_dir).as_posix()
+            except Exception:
+                rel = path.name
+            files.append(
+                {
+                    "path": rel,
+                    "size_bytes": path.stat().st_size,
+                }
+            )
+        return {"exists": True, "root": str(artifact_dir), "files": files}
+
     def _prepare_guideline(self, iteration_type: str = None) -> bool:
         """
         Generate or synthesize a guideline depending on the ablation variant.
@@ -1449,8 +1482,10 @@ class Manager:
         workspace_dir = Path(self.output_folder) / "deployment_bundle"
         metadata_dir = workspace_dir / "metadata"
         artifacts_dir = workspace_dir / "artifacts"
+        artifact_source_dir = workspace_dir / "artifact_source"
         metadata_dir.mkdir(parents=True, exist_ok=True)
         artifacts_dir.mkdir(parents=True, exist_ok=True)
+        artifact_source_dir.mkdir(parents=True, exist_ok=True)
 
         files = {}
         if getattr(self, "preprocessing_code", None):
@@ -1468,12 +1503,19 @@ class Manager:
                 workspace_dir / "baseline_assembled.py",
                 self.assembled_code,
             )
+        assembled_artifact_dir = self.get_assembled_artifact_dir()
+        if assembled_artifact_dir.exists():
+            shutil.copytree(assembled_artifact_dir, artifact_source_dir, dirs_exist_ok=True)
+        artifact_manifest = self.load_assembled_artifact_manifest()
+        artifact_inventory = self.describe_artifact_dir(artifact_source_dir)
         metadata = {
             "iteration_type": iteration_type or "default",
             "description_analysis": getattr(self, "description_analysis", {}) or {},
             "guideline": getattr(self, "guideline", {}) or {},
             "task_schema": getattr(self, "task_schema", {}) or {},
             "task_context": getattr(self, "task_context", {}) or {},
+            "artifact_manifest": artifact_manifest,
+            "artifact_inventory": artifact_inventory,
         }
         self._write_workspace_file(
             metadata_dir / "deployment_context.json",
@@ -1483,6 +1525,9 @@ class Manager:
             "workspace_dir": str(workspace_dir),
             "metadata_dir": str(metadata_dir),
             "artifacts_dir": str(artifacts_dir),
+            "artifact_source_dir": str(artifact_source_dir),
+            "artifact_manifest": artifact_manifest,
+            "artifact_inventory": artifact_inventory,
             "files": files,
         }
 
@@ -1499,6 +1544,9 @@ class Manager:
         bundle = self.deployment_refactor_agent(
             description_analysis=getattr(self, "description_analysis", {}) or {},
             task_schema=getattr(self, "task_schema", {}) or {},
+            artifact_manifest=workspace.get("artifact_manifest", {}) or {},
+            artifact_inventory=workspace.get("artifact_inventory", {}) or {},
+            artifact_source_dir=workspace.get("artifact_source_dir", "") or "",
             assembled_code=getattr(self, "assembled_code", "") or "",
             workspace_dir=workspace_dir,
             iteration_type=iteration_type,

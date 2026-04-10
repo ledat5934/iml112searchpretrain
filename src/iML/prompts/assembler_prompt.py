@@ -23,6 +23,20 @@ Your task is to ensure the script is clean, robust, and correct.
 1.  **Final Script**: The output must be a single, standalone, executable Python file and it should be run on the real data.
 2.  **Validation Score**: If validation data is available, you MUST calculate and print a relevant validation score.
 3.  **Absolute Output Path**: The script MUST save `submission.csv` to the following absolute path: `{output_path}`.
+3a. **Persist Trained Artifacts**:
+    - After training succeeds, save reusable inference artifacts under this absolute directory: `{artifact_dir}`.
+    - Save the trained model/checkpoint and any fitted preprocessing assets needed for inference, such as scalers, encoders, feature column lists, tokenizer state, normalization stats, or class labels.
+    - If the code already keeps the best model weights in memory, you MUST materialize them to disk for later loading.
+    - Write a manifest JSON file to this absolute path: `{artifact_manifest_path}`.
+    - The manifest should describe the saved artifacts and how inference should reload them. Include keys when available such as:
+      - `artifacts`: list of saved files with `path` and `type`
+      - `model_type`
+      - `framework`
+      - `target`
+      - `class_names` or `label_classes_path`
+      - `feature_columns`
+      - `load_notes`
+    - Use real trained artifacts only. Do not create fake placeholder model files.
 4.  **Error Handling (NO SILENT FAILURE)**:
     - Maintain a single `try...except` block for robust execution.
     - If ANY exception occurs, you MUST print the error to stderr and **exit with a non-zero status code** (`sys.exit(1)`).
@@ -64,6 +78,8 @@ Based on the context above, generate the complete and corrected Python code. The
         self,
         original_code: str,
         output_path: str,
+        artifact_dir: str,
+        artifact_manifest_path: str,
         description: Dict,
         error_message: str = None,
         iteration_type: str = None,
@@ -114,6 +130,8 @@ The code above failed with the following error.
             output_data_format=description.get('output_data', 'N/A'),
             original_code=original_code,
             output_path=output_path,
+            artifact_dir=artifact_dir,
+            artifact_manifest_path=artifact_manifest_path,
             retry_context=retry_context,
             datafile_structure=datafile_structure or "N/A",
         )

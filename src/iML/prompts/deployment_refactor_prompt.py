@@ -26,6 +26,8 @@ Generate a deployment bundle with:
   - `predict_one(record)`
   - `predict_proba(records)` when classification is supported
 - `build_bundle.py` must build real artifacts under `artifacts/` by reusing the generated ML logic as much as possible.
+- If trained artifacts already exist in the provided artifact source directory, prefer reusing and packaging those artifacts instead of retraining.
+- Retraining is only acceptable as a fallback when the provided artifact manifest or files are clearly insufficient for inference.
 - `build_bundle.py` must also write:
   - `metadata/inference_contract.json`
   - `metadata/bundle_metadata.json`
@@ -63,6 +65,18 @@ Do not add commentary before, between, or after the file blocks.
 {task_schema_json}
 ```
 
+- Existing trained artifact manifest:
+```json
+{artifact_manifest_json}
+```
+
+- Existing trained artifact inventory:
+```json
+{artifact_inventory_json}
+```
+
+- Artifact source directory available to the generated code: `{artifact_source_dir}`
+
 - Final assembled code:
 ```python
 {assembled_code}
@@ -73,6 +87,9 @@ Do not add commentary before, between, or after the file blocks.
         self,
         description_analysis: Dict[str, Any],
         task_schema: Dict[str, Any],
+        artifact_manifest: Dict[str, Any],
+        artifact_inventory: Dict[str, Any],
+        artifact_source_dir: str,
         assembled_code: str,
         iteration_type: str | None = None,
     ) -> str:
@@ -80,6 +97,9 @@ Do not add commentary before, between, or after the file blocks.
             iteration_type=iteration_type or "default",
             description_json=json.dumps(description_analysis or {}, indent=2, ensure_ascii=False),
             task_schema_json=json.dumps(task_schema or {}, indent=2, ensure_ascii=False),
+            artifact_manifest_json=json.dumps(artifact_manifest or {}, indent=2, ensure_ascii=False),
+            artifact_inventory_json=json.dumps(artifact_inventory or {}, indent=2, ensure_ascii=False),
+            artifact_source_dir=artifact_source_dir or "",
             assembled_code=assembled_code or "",
         )
         self.manager.save_and_log_states(prompt, "deployment/deployment_refactor_prompt.txt")

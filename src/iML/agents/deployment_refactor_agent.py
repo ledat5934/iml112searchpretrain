@@ -26,6 +26,9 @@ class DeploymentRefactorAgent(BaseAgent):
         self,
         description_analysis: Dict[str, Any],
         task_schema: Dict[str, Any],
+        artifact_manifest: Dict[str, Any],
+        artifact_inventory: Dict[str, Any],
+        artifact_source_dir: str,
         assembled_code: str,
         workspace_dir: str,
         iteration_type: str | None = None,
@@ -34,6 +37,9 @@ class DeploymentRefactorAgent(BaseAgent):
         prompt = self.prompt_handler.build(
             description_analysis=description_analysis,
             task_schema=task_schema,
+            artifact_manifest=artifact_manifest,
+            artifact_inventory=artifact_inventory,
+            artifact_source_dir=artifact_source_dir,
             assembled_code=assembled_code,
             iteration_type=iteration_type,
         )
