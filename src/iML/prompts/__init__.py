@@ -12,3 +12,6 @@ from .error_triage_prompt import ErrorTriagePrompt
 from .evidence_gathering_prompt import EvidenceGatheringPrompt
 from .prompt_decider_prompt import PromptDeciderPrompt
 from .profiling_llm_prompt import ProfilingLLMPrompt
+from .deployment_refactor_prompt import DeploymentRefactorPrompt
+from .api_coder_prompt import APICoderPrompt
+from .api_test_prompt import APITestPrompt

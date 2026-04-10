@@ -3,7 +3,7 @@ import os
 import json
 import difflib
 import logging
-from typing import Dict, Any, List, Tuple, Optional
+from typing import Dict, Any, List, Tuple, Optional, Callable
 
 from .base_agent import BaseAgent
 from ..llm import ChatLLMFactory
@@ -131,6 +131,28 @@ PHASE_NAME: {phase_name}
                     "- The script is end-to-end and MUST write submission.csv to the required absolute output path (see Output constraint).",
                     "- The submission MUST NOT be empty/header-only. Never write an empty placeholder submission on failure.",
                     "- If submission validation fails, exit non-zero to trigger debugging; do not silently continue.",
+                    *common,
+                ]
+            )
+
+        if "deployment/build_bundle" in p:
+            return "\n".join(
+                [
+                    "DEPLOYMENT BUNDLE BUILD REQUIREMENTS:",
+                    "- The script MUST build real deployment artifacts from the trained pipeline logic.",
+                    "- The script MUST write model bundle artifacts, inference_contract.json, and sample_request.json.",
+                    "- Do NOT fabricate placeholder model outputs or fake artifacts.",
+                    *common,
+                ]
+            )
+
+        if "deployment/api_validation" in p:
+            return "\n".join(
+                [
+                    "DEPLOYMENT API VALIDATION REQUIREMENTS:",
+                    "- The script MUST validate the generated API by making real requests to the FastAPI app via TestClient.",
+                    "- The script MUST fail loudly if the response schema or inference path is invalid.",
+                    "- Do NOT bypass the API layer by calling the model directly unless the test explicitly checks both paths.",
                     *common,
                 ]
             )
@@ -398,6 +420,8 @@ PHASE_NAME: {phase_name}
         datafile_structure: Optional[str] = None,
         require_submission: bool = False,
         submission_filename: Optional[str] = None,
+        executor: Optional[Callable[[str, int], Dict[str, Any]]] = None,
+        success_validator: Optional[Callable[[], bool]] = None,
     ) -> Tuple[bool, str, Dict[str, Any]]:
         """Two-stage LLM debug: summarize (no search) then refine (with google_search); loop up to max_rounds.
 
@@ -453,9 +477,17 @@ PHASE_NAME: {phase_name}
             # Save refined code snapshot into the attempt folder
             self.manager.save_and_log_states(refined, f"{phase_name}/attempt_{refined_attempt_index}/generated_code.py")
             # Run refined code
-            result = self.manager.execute_code(refined, f"{phase_name}", refined_attempt_index)
+            if executor is not None:
+                result = executor(refined, refined_attempt_index)
+            else:
+                result = self.manager.execute_code(refined, f"{phase_name}", refined_attempt_index)
             ok = bool(result.get("success"))
-            if ok and require_submission and phase_name == "assemble":
+            if ok and success_validator is not None:
+                try:
+                    ok = bool(success_validator())
+                except Exception:
+                    ok = False
+            elif ok and require_submission and phase_name == "assemble":
                 # Require artifact existence
                 out_dir = getattr(self.manager, 'output_folder', None) or "."
                 expected = submission_filename or "submission.csv"

@@ -30,6 +30,9 @@ from ..agents import (
     ComparisonAgent,
     DebugAgent,
     PromptDeciderAgent,
+    DeploymentRefactorAgent,
+    APICoderAgent,
+    APITestAgent,
 )
 from ..agents.comparison_agent import IterationResultExtractor
 from ..llm import ChatLLMFactory
@@ -211,6 +214,24 @@ class Manager:
             manager=self,
             max_rounds=1,
         )
+        deployment_refactor_llm = getattr(self.config, "deployment_refactor", None) or self.config.assembler
+        deployment_api_llm = getattr(self.config, "deployment_api_coder", None) or self.config.assembler
+        deployment_test_llm = getattr(self.config, "deployment_api_test", None) or self.config.assembler
+        self.deployment_refactor_agent = DeploymentRefactorAgent(
+            config=config,
+            manager=self,
+            llm_config=deployment_refactor_llm,
+        )
+        self.api_coder_agent = APICoderAgent(
+            config=config,
+            manager=self,
+            llm_config=deployment_api_llm,
+        )
+        self.api_test_agent = APITestAgent(
+            config=config,
+            manager=self,
+            llm_config=deployment_test_llm,
+        )
 
         self.context = {
             "input_data_folder": input_data_folder,
@@ -277,6 +298,22 @@ class Manager:
     def is_search_enabled(self) -> bool:
         """Whether external web/ADK search is allowed in this run."""
         return (self.search_mode or "hybrid") != "llm_only"
+
+    def get_post_assembly_deployment_settings(self) -> Dict[str, Any]:
+        cfg = getattr(self.config, "post_assembly_deployment", None)
+        if not cfg:
+            return {"enabled": False}
+        return {
+            "enabled": bool(getattr(cfg, "enabled", False)),
+        }
+
+    def is_post_assembly_deployment_enabled(self) -> bool:
+        return self.get_post_assembly_deployment_settings().get("enabled", False)
+
+    def _write_workspace_file(self, path: Path, content: str) -> str:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content or "", encoding="utf-8")
+        return str(path)
 
     def _prepare_guideline(self, iteration_type: str = None) -> bool:
         """
@@ -508,6 +545,9 @@ class Manager:
                             cand_submission = candidate_dir / "submission.csv"
                             if cand_submission.exists():
                                 any_success = True
+                                deployment_result = self._run_post_assembly_deployment(iteration_type=iteration_type)
+                                if deployment_result.get("status") == "failed":
+                                    logger.warning(f"Post-assembly deployment phase failed for candidate {idx}: {deployment_result.get('stage')}")
                                 try:
                                     dst_archive = parent_iter_dir / f"submission_cand_{idx}.csv"
                                     shutil.copy2(cand_submission, dst_archive)
@@ -580,6 +620,9 @@ class Manager:
                 return False
             self.assembled_code = assembler_result.get("code")
             logger.info("Final script generated and executed successfully.")
+            deployment_result = self._run_post_assembly_deployment(iteration_type=iteration_type)
+            if deployment_result.get("status") == "failed":
+                logger.warning(f"Post-assembly deployment phase failed: {deployment_result.get('stage')}")
             
             return True
             
@@ -813,6 +856,9 @@ class Manager:
                 return False
             self.assembled_code = assembler_result.get("code")
             logger.info("Initial script generated and executed successfully.")
+            deployment_result = self._run_post_assembly_deployment(iteration_type="default")
+            if deployment_result.get("status") == "failed":
+                logger.warning(f"Post-assembly deployment phase failed: {deployment_result.get('stage')}")
 
         logger.info("AutoML pipeline completed successfully!")
         return True
@@ -1243,6 +1289,150 @@ class Manager:
         Keep behavior close to earlier pipeline: pass description-only context.
         """
         return (self.description_analysis or {}).get("task_description") or json.dumps(self.description_analysis or {})
+
+    def _materialize_deployment_workspace(self, iteration_type: str | None = None) -> Dict[str, Any]:
+        workspace_dir = Path(self.output_folder) / "deployment_bundle"
+        metadata_dir = workspace_dir / "metadata"
+        artifacts_dir = workspace_dir / "artifacts"
+        metadata_dir.mkdir(parents=True, exist_ok=True)
+        artifacts_dir.mkdir(parents=True, exist_ok=True)
+
+        files = {}
+        if getattr(self, "preprocessing_code", None):
+            files["baseline_preprocessing.py"] = self._write_workspace_file(
+                workspace_dir / "baseline_preprocessing.py",
+                self.preprocessing_code,
+            )
+        if getattr(self, "modeling_code", None):
+            files["baseline_modeling.py"] = self._write_workspace_file(
+                workspace_dir / "baseline_modeling.py",
+                self.modeling_code,
+            )
+        if getattr(self, "assembled_code", None):
+            files["baseline_assembled.py"] = self._write_workspace_file(
+                workspace_dir / "baseline_assembled.py",
+                self.assembled_code,
+            )
+        metadata = {
+            "iteration_type": iteration_type or "default",
+            "description_analysis": getattr(self, "description_analysis", {}) or {},
+            "guideline": getattr(self, "guideline", {}) or {},
+            "task_schema": getattr(self, "task_schema", {}) or {},
+            "task_context": getattr(self, "task_context", {}) or {},
+        }
+        self._write_workspace_file(
+            metadata_dir / "deployment_context.json",
+            json.dumps(metadata, indent=2, ensure_ascii=False),
+        )
+        return {
+            "workspace_dir": str(workspace_dir),
+            "metadata_dir": str(metadata_dir),
+            "artifacts_dir": str(artifacts_dir),
+            "files": files,
+        }
+
+    def _run_post_assembly_deployment(self, iteration_type: str | None = None) -> Dict[str, Any]:
+        settings = self.get_post_assembly_deployment_settings()
+        if not settings.get("enabled", False):
+            return {"status": "skipped", "reason": "deployment phase disabled"}
+        if not getattr(self, "assembled_code", None):
+            return {"status": "skipped", "reason": "assembled code unavailable"}
+
+        workspace = self._materialize_deployment_workspace(iteration_type=iteration_type)
+        workspace_dir = workspace["workspace_dir"]
+
+        bundle = self.deployment_refactor_agent(
+            description_analysis=getattr(self, "description_analysis", {}) or {},
+            guideline=getattr(self, "guideline", {}) or {},
+            task_schema=getattr(self, "task_schema", {}) or {},
+            preprocessing_code=getattr(self, "preprocessing_code", "") or "",
+            modeling_code=getattr(self, "modeling_code", "") or "",
+            assembled_code=getattr(self, "assembled_code", "") or "",
+            workspace_dir=workspace_dir,
+            iteration_type=iteration_type,
+        )
+        if bundle.get("status") != "success":
+            return {"status": "failed", "stage": "deployment_refactor", "bundle": bundle}
+
+        bundle_build_path = bundle["files"].get("build_bundle.py")
+        bundle_build_execution = self.execute_existing_python_script_with_debug(
+            script_path=bundle_build_path,
+            phase_name="deployment/build_bundle",
+            cwd=workspace_dir,
+            required_paths=[
+                Path(workspace["metadata_dir"]) / "inference_contract.json",
+                Path(workspace["metadata_dir"]) / "sample_request.json",
+                Path(workspace["metadata_dir"]) / "bundle_metadata.json",
+            ],
+        )
+        if bundle_build_execution.get("status") != "success":
+            return {
+                "status": "failed",
+                "stage": "deployment_build_bundle",
+                "bundle": bundle,
+                "bundle_build_execution": bundle_build_execution,
+            }
+
+        predictor_path = bundle["files"].get("predictor.py")
+        schemas_path = bundle["files"].get("schemas.py")
+        predictor_code = Path(predictor_path).read_text(encoding="utf-8") if predictor_path else ""
+        schemas_code = Path(schemas_path).read_text(encoding="utf-8") if schemas_path else ""
+
+        api = self.api_coder_agent(
+            description_analysis=getattr(self, "description_analysis", {}) or {},
+            guideline=getattr(self, "guideline", {}) or {},
+            predictor_code=predictor_code,
+            schemas_code=schemas_code,
+            workspace_dir=workspace_dir,
+            iteration_type=iteration_type,
+        )
+        if api.get("status") != "success":
+            return {
+                "status": "failed",
+                "stage": "deployment_api_coder",
+                "bundle": bundle,
+                "bundle_build_execution": bundle_build_execution,
+                "api": api,
+            }
+
+        api_test = self.api_test_agent(
+            description_analysis=getattr(self, "description_analysis", {}) or {},
+            guideline=getattr(self, "guideline", {}) or {},
+            predictor_code=predictor_code,
+            api_code=api.get("code", ""),
+            workspace_dir=workspace_dir,
+            iteration_type=iteration_type,
+        )
+        if api_test.get("status") != "success":
+            return {
+                "status": "failed",
+                "stage": "deployment_api_test_codegen",
+                "bundle": bundle,
+                "bundle_build_execution": bundle_build_execution,
+                "api": api,
+                "api_test": api_test,
+            }
+
+        api_validation = self.execute_existing_python_script_with_debug(
+            script_path=api_test["path"],
+            phase_name="deployment/api_validation",
+            cwd=workspace_dir,
+        )
+        summary = {
+            "status": "success" if api_validation.get("status") == "success" else "failed",
+            "stage": "deployment_complete" if api_validation.get("status") == "success" else "deployment_api_validation",
+            "workspace_dir": workspace_dir,
+            "bundle": bundle,
+            "bundle_build_execution": bundle_build_execution,
+            "api": api,
+            "api_test": api_test,
+            "api_validation": api_validation,
+        }
+        self._write_workspace_file(
+            Path(workspace["metadata_dir"]) / "deployment_summary.json",
+            json.dumps(summary, indent=2, ensure_ascii=False),
+        )
+        return summary
     
     def _run_iteration_pipeline(self, iteration_type):
         """Run the pipeline for a specific iteration type."""
@@ -1339,6 +1529,9 @@ class Manager:
                         cand_submission = candidate_dir / "submission.csv"
                         if cand_submission.exists():
                             any_success = True
+                            deployment_result = self._run_post_assembly_deployment(iteration_type=iteration_type)
+                            if deployment_result.get("status") == "failed":
+                                logger.warning(f"Post-assembly deployment phase failed for candidate {idx}: {deployment_result.get('stage')}")
                             try:
                                 dst_archive = parent_iter_dir / f"submission_cand_{idx}.csv"
                                 shutil.copy2(cand_submission, dst_archive)
@@ -1397,6 +1590,9 @@ class Manager:
             return False
         self.assembled_code = assembler_result.get("code")
         logger.info("Final script generated and executed successfully.")
+        deployment_result = self._run_post_assembly_deployment(iteration_type=iteration_type)
+        if deployment_result.get("status") == "failed":
+            logger.warning(f"Post-assembly deployment phase failed: {deployment_result.get('stage')}")
         
         return True
 
@@ -1469,6 +1665,9 @@ class Manager:
         
         self.assembled_code = assembler_result.get("code")
         logger.info(f"Initial script generated and executed successfully.")
+        deployment_result = self._run_post_assembly_deployment(iteration_type="default")
+        if deployment_result.get("status") == "failed":
+            logger.warning(f"Post-assembly deployment phase failed: {deployment_result.get('stage')}")
 
         logger.info("AutoML pipeline completed successfully!")
 
@@ -1591,6 +1790,154 @@ class Manager:
             with open(stderr_path, "w") as f:
                 f.write(str(e))
             return {"success": False, "stdout": "", "stderr": str(e)}
+
+    def execute_existing_python_script(
+        self,
+        script_path: str | Path,
+        phase_name: str,
+        attempt: int = 1,
+        cwd: str | None = None,
+    ) -> dict:
+        """Execute a materialized Python script and store stdout/stderr in states."""
+        script_path = Path(script_path)
+        attempt_dir = Path(self.output_folder) / "states" / phase_name / f"attempt_{attempt}"
+        attempt_dir.mkdir(parents=True, exist_ok=True)
+        stdout_path = attempt_dir / "stdout.txt"
+        stderr_path = attempt_dir / "stderr.txt"
+
+        if not script_path.exists():
+            stderr = f"Script not found: {script_path}"
+            stderr_path.write_text(stderr, encoding="utf-8")
+            return {"success": False, "stdout": "", "stderr": stderr}
+
+        try:
+            run_cwd = cwd or str(script_path.parent)
+            completed = subprocess.run(
+                [sys.executable, str(script_path)],
+                cwd=run_cwd,
+                text=True,
+                capture_output=True,
+                timeout=self.config.per_execution_timeout,
+            )
+            stdout = completed.stdout or ""
+            stderr = completed.stderr or ""
+            stdout_path.write_text(stdout, encoding="utf-8")
+            stderr_path.write_text(stderr, encoding="utf-8")
+            if completed.returncode == 0:
+                return {"success": True, "stdout": stdout, "stderr": stderr}
+            return {
+                "success": False,
+                "stdout": stdout,
+                "stderr": f"STDOUT:\n{stdout}\n\nSTDERR:\n{stderr}",
+            }
+        except subprocess.TimeoutExpired as exc:
+            stdout = exc.stdout or ""
+            stderr = exc.stderr or ""
+            stdout_path.write_text(stdout, encoding="utf-8")
+            stderr_path.write_text(stderr, encoding="utf-8")
+            return {
+                "success": False,
+                "stdout": stdout,
+                "stderr": f"Process reached time limit after {self.config.per_execution_timeout} seconds.\n\n{stderr}",
+            }
+        except Exception as e:
+            stderr_path.write_text(str(e), encoding="utf-8")
+            return {"success": False, "stdout": "", "stderr": str(e)}
+
+    def execute_existing_python_script_with_debug(
+        self,
+        script_path: str | Path,
+        phase_name: str,
+        cwd: str | None = None,
+        required_paths: List[str | Path] | None = None,
+    ) -> dict:
+        """Execute a script and use DebugAgent to patch and rerun if it fails."""
+        script_path = Path(script_path)
+        required_path_objs = [Path(p) for p in (required_paths or [])]
+
+        def _validate_artifacts() -> bool:
+            return all(path.exists() for path in required_path_objs)
+
+        first_result = self.execute_existing_python_script(
+            script_path=script_path,
+            phase_name=phase_name,
+            attempt=1,
+            cwd=cwd,
+        )
+        if first_result.get("success") and _validate_artifacts():
+            return {"status": "success", "execution": first_result, "attempts": 1, "path": str(script_path)}
+        if first_result.get("success") and required_path_objs and not _validate_artifacts():
+            missing = [str(path) for path in required_path_objs if not path.exists()]
+            first_result = {
+                **first_result,
+                "success": False,
+                "stderr": (
+                    (first_result.get("stderr") or "")
+                    + f"\nRequired artifacts missing after script execution: {missing}"
+                ).strip(),
+            }
+
+        if not self.is_debug_enabled():
+            return {"status": "failed", "execution": first_result, "attempts": 1, "path": str(script_path)}
+
+        try:
+            code = script_path.read_text(encoding="utf-8")
+        except Exception as exc:
+            return {
+                "status": "failed",
+                "execution": first_result,
+                "attempts": 1,
+                "path": str(script_path),
+                "error": f"Could not read script for debug patching: {exc}",
+            }
+
+        datafile_structure = get_directory_structure(self.input_data_folder)
+        task_desc = self.build_debug_context(
+            stderr=first_result.get("stderr", ""),
+            code=code,
+            phase_name=phase_name,
+            attempt=1,
+        )
+
+        def _executor(refined_code: str, refined_attempt_index: int) -> dict:
+            script_path.write_text(refined_code, encoding="utf-8")
+            return self.execute_existing_python_script(
+                script_path=script_path,
+                phase_name=phase_name,
+                attempt=refined_attempt_index,
+                cwd=cwd,
+            )
+
+        ok, patched, meta = self.debug_agent.llm_debug_fix(
+            code=code,
+            stderr=first_result.get("stderr", ""),
+            phase_name=phase_name,
+            filename=script_path.stem,
+            attempt=1,
+            task_description=task_desc,
+            datafile_structure=datafile_structure,
+            executor=_executor,
+            success_validator=_validate_artifacts if required_path_objs else None,
+        )
+        if ok:
+            try:
+                script_path.write_text(patched, encoding="utf-8")
+            except Exception:
+                pass
+            return {
+                "status": "success",
+                "execution": meta.get("last_result", first_result) if isinstance(meta, dict) else first_result,
+                "attempts": meta.get("last_attempt_index", 1) if isinstance(meta, dict) else 1,
+                "path": str(script_path),
+                "debug_meta": meta,
+            }
+        return {
+            "status": "failed",
+            "execution": meta.get("last_result", first_result) if isinstance(meta, dict) else first_result,
+            "attempts": meta.get("last_attempt_index", 1) if isinstance(meta, dict) else 1,
+            "path": str(script_path),
+            "debug_meta": meta,
+        }
 
 
     def update_python_code(self):

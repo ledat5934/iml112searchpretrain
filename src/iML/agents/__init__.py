@@ -19,6 +19,9 @@ from .comparison_agent import ComparisonAgent
 from .debug_agent import DebugAgent
 from .monolithic_coder_agent import MonolithicCoderAgent
 from .prompt_decider_agent import PromptDeciderAgent
+from .deployment_refactor_agent import DeploymentRefactorAgent
+from .api_coder_agent import APICoderAgent
+from .api_test_agent import APITestAgent
 
 __all__ = [
     "BaseAgent",
@@ -40,4 +43,7 @@ __all__ = [
     "DebugAgent",
     "MonolithicCoderAgent",
     "PromptDeciderAgent",
+    "DeploymentRefactorAgent",
+    "APICoderAgent",
+    "APITestAgent",
 ]

@@ -24,6 +24,9 @@ verbosity: 2
 # - llm_only: disable external search entirely; rely on LLM-only generation
 search_mode: hybrid
 
+post_assembly_deployment:
+  enabled: true
+
 # Default LLM Configuration
 llm: &default_llm
   provider: gemini
@@ -62,4 +65,13 @@ monolithic_coder:
   <<: *default_llm
 
 assembler:
+  <<: *default_llm
+
+deployment_refactor:
+  <<: *default_llm
+
+deployment_api_coder:
+  <<: *default_llm
+
+deployment_api_test:
   <<: *default_llm

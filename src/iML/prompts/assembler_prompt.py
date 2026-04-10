@@ -34,6 +34,12 @@ Your task is to ensure the script is clean, robust, and correct.
     - If a `sample_submission.csv` exists in the dataset paths, validate that the produced submission has the same columns/order.
     - If any submission validation fails, treat it as a failure: print an error to stderr and `sys.exit(1)`.
 6.  **Clarity**: Ensure the final script is clean and well-structured.
+6a. **Refactorability**: Keep the main logic separated into small functions where possible, especially:
+    - data/preprocessing fit logic
+    - training logic
+    - inference/prediction logic
+    - submission creation logic
+    This is required because a later deployment phase may refactor the script into a predictor/API bundle.
 7.  **Sample Submission File**: Sample submission file given is for template reference (Columns) only. You have to use the test data or test file to generate predictions and your right submission file. In some cases, you must browse the test image folder to get the IDs and data.
 8.  **Do not add any other code.**
 9.  **Data Loading**: Keep the data loading code of the preprocessing code. DO NOT CHANGE THE FILE PATHS FROM THE ORIGINAL CODE.
