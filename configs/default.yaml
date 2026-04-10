@@ -30,7 +30,7 @@ post_assembly_deployment:
 # Default LLM Configuration
 llm: &default_llm
   provider: gemini
-  model: gemini-2.5-flash
+  model: gemini-2.5-pro
   max_tokens: 16384
   proxy_url: null
   temperature: 0.0
