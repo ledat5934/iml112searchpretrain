@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from .base_agent import BaseAgent
 from .utils import init_llm
+from ..prompts.research_proposal_prompt import ResearchProposalPrompt
 from ..prompts.research_mutation_prompt import ResearchMutationPrompt
 
 logger = logging.getLogger(__name__)
@@ -22,8 +23,9 @@ class ResearchPhaseConfig:
 
 class ResearchPhaseAgent(BaseAgent):
     """
-    After baseline code is working, generate small LLM mutations (candidates),
-    run timeboxed proxy eval, rank candidates, then run full eval for top-1.
+    After baseline code is working, propose 3 different improvements,
+    generate improved candidates, run timeboxed proxy eval, rank them,
+    then run full eval for top-1.
     """
 
     def __init__(self, config, manager, llm_config, phase_cfg: Optional[ResearchPhaseConfig] = None):
@@ -39,6 +41,11 @@ class ResearchPhaseAgent(BaseAgent):
             llm_config=self.llm_config,
             manager=self.manager,
             template=getattr(self.llm_config, "template", None),
+        )
+        self.proposal_prompt = ResearchProposalPrompt(
+            llm_config=self.llm_config,
+            manager=self.manager,
+            template=None,
         )
 
     @staticmethod
@@ -84,34 +91,66 @@ class ResearchPhaseAgent(BaseAgent):
 
         return float("-inf"), "no_usable_metric"
 
-    def __call__(self, *, baseline_code: str, iteration_type: str | None = None) -> Dict[str, Any]:
+    def __call__(
+        self,
+        *,
+        baseline_code: str,
+        description_analysis: Optional[Dict[str, Any]] = None,
+        profiling_summary: Optional[Dict[str, Any]] = None,
+        baseline_stdout: str = "",
+        iteration_type: str | None = None,
+    ) -> Dict[str, Any]:
         cfg = self.phase_cfg
         if not cfg.enabled:
             return {"skipped": True, "reason": "research_phase_disabled"}
 
-        self.manager.log_agent_start("ResearchPhaseAgent: generating proxy candidates...")
+        self.manager.log_agent_start("ResearchPhaseAgent: planning and evaluating improvements...")
+
+        try:
+            proposal_prompt = self.proposal_prompt.build(
+                description_analysis=description_analysis or {},
+                profiling_summary=profiling_summary or {},
+                baseline_code=baseline_code,
+                stdout_excerpt=baseline_stdout or "",
+                n_candidates=int(cfg.n_candidates),
+                iteration_type=iteration_type,
+            )
+            self.manager.save_and_log_states(proposal_prompt, "research/proposals_prompt.txt")
+            proposal_resp = self.llm.assistant_chat(proposal_prompt)
+            self.manager.save_and_log_states(proposal_resp, "research/proposals_raw_response.txt")
+            proposal_payload = self.proposal_prompt.parse(proposal_resp)
+        except Exception as e:
+            self.manager.log_agent_end("ResearchPhaseAgent: proposal generation failed.")
+            return {"skipped": False, "error": f"proposal_generation_failed: {e}"}
 
         leaderboard: List[Dict[str, Any]] = []
-        candidate_code: Dict[int, str] = {}
-        best_idx: Optional[int] = None
+        candidate_code: Dict[str, str] = {}
+        best_id: Optional[str] = None
         best_score = float("-inf")
+        proposals = (proposal_payload or {}).get("proposals", []) or []
 
-        for i in range(1, int(cfg.n_candidates) + 1):
+        for i, proposal in enumerate(proposals[: int(cfg.n_candidates)], start=1):
+            proposal_id = proposal.get("proposal_id") or f"candidate_{i}"
             prompt = self.prompt_handler.build(
                 baseline_code=baseline_code,
                 proxy_time_budget_sec=int(cfg.proxy_time_budget_sec),
-                mode="mutate",
+                mode="mutate_from_proposal",
+                proposal=proposal,
+                description_analysis=description_analysis or {},
+                profiling_summary=profiling_summary or {},
+                stdout_excerpt=baseline_stdout or "",
+                iteration_type=iteration_type,
             )
-            self.manager.save_and_log_states(prompt, f"research/candidate_{i}/prompt.txt")
+            self.manager.save_and_log_states(prompt, f"research/{proposal_id}/prompt.txt")
             resp = self.llm.assistant_chat(prompt)
-            self.manager.save_and_log_states(resp, f"research/candidate_{i}/raw_response.txt")
+            self.manager.save_and_log_states(resp, f"research/{proposal_id}/raw_response.txt")
             mutated = self.prompt_handler.parse(resp)
-            self.manager.save_and_log_states(mutated, f"research/candidate_{i}/mutated_code.py")
-            candidate_code[i] = mutated
+            self.manager.save_and_log_states(mutated, f"research/{proposal_id}/mutated_code.py")
+            candidate_code[proposal_id] = mutated
 
             exec_result = self.manager.execute_code(
                 mutated,
-                phase_name=f"research/candidate_{i}_proxy",
+                phase_name=f"research/{proposal_id}/proxy",
                 attempt=1,
                 timeout_sec=int(cfg.proxy_exec_timeout_sec),
                 termination_grace_sec=int(cfg.termination_grace_sec),
@@ -121,8 +160,8 @@ class ResearchPhaseAgent(BaseAgent):
             score, reason = self._score_proxy(proxy)
 
             row = {
-                "candidate": i,
-                "kind": "mutation",
+                "candidate": proposal_id,
+                "proposal": proposal,
                 "exec_success": bool(exec_result.get("success")),
                 "proxy": proxy,
                 "score": score,
@@ -132,38 +171,50 @@ class ResearchPhaseAgent(BaseAgent):
 
             if score > best_score:
                 best_score = score
-                best_idx = i
+                best_id = proposal_id
 
         # Persist leaderboard
         self.manager.save_and_log_states(
-            json.dumps({"leaderboard": leaderboard, "best_candidate": best_idx}, ensure_ascii=False, indent=2),
+            json.dumps(
+                {
+                    "proposal_payload": proposal_payload,
+                    "leaderboard": leaderboard,
+                    "best_candidate": best_id,
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
             "research/leaderboard.json",
         )
 
-        result: Dict[str, Any] = {"leaderboard": leaderboard, "best_candidate": best_idx}
+        result: Dict[str, Any] = {
+            "proposal_payload": proposal_payload,
+            "leaderboard": leaderboard,
+            "best_candidate": best_id,
+        }
 
-        if best_idx is None:
+        if best_id is None:
             self.manager.log_agent_end("ResearchPhaseAgent: no usable proxy score; skipping full.")
             result["full_skipped"] = True
             result["full_reason"] = "no_best_candidate"
             return result
 
-        # Full run for top-1 (mutated) candidate
+        # Full run for top-1 candidate
         try:
-            best_code = candidate_code.get(int(best_idx)) or baseline_code
+            best_code = candidate_code.get(best_id) or baseline_code
 
             full_exec = self.manager.execute_code(
                 best_code,
-                phase_name=f"research/candidate_{best_idx}_full",
+                phase_name=f"research/{best_id}/full",
                 attempt=1,
             )
-            result["full"] = {"candidate": best_idx, "exec": full_exec}
+            result["full"] = {"candidate": best_id, "code": best_code, "exec": full_exec}
             self.manager.save_and_log_states(
                 json.dumps(result.get("full", {}), ensure_ascii=False, indent=2),
                 "research/full_result.json",
             )
         except Exception as e:
-            result["full"] = {"candidate": best_idx, "error": str(e)}
+            result["full"] = {"candidate": best_id, "error": str(e)}
 
         self.manager.log_agent_end("ResearchPhaseAgent: completed.")
         return result

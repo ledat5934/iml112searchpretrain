@@ -20,7 +20,7 @@ You are given a WORKING baseline Python pipeline script that trains/evaluates an
 
 Your task depends on MODE:
 - MODE = "instrument_only": DO NOT change modeling logic/hyperparameters. Only add proxy time budget (soft stop) and proxy result printing.
-- MODE = "mutate": produce ONE mutated version of the script with exactly ONE SMALL, SAFE change intended to improve validation performance, plus the proxy time budget and proxy result printing.
+- MODE = "mutate_from_proposal": produce ONE improved version of the script that implements the provided proposal, plus the proxy time budget and proxy result printing.
 
 MODE:
 {mode}
@@ -28,7 +28,7 @@ MODE:
 ## HARD CONSTRAINTS
 - Keep the script runnable end-to-end.
 - Do NOT change the dataset split logic: use the SAME split as the baseline (same random_state=42 behavior).
-- The mutated script MUST keep producing `submission.csv` in the current working directory (same as baseline).
+- In full mode, the improved script MUST keep producing `submission.csv` in the current working directory (same as baseline).
 - Add a PROXY TIME BUDGET (soft stop): stop training when time budget is exceeded, but exit cleanly and still compute/report the best metric achieved so far.
 - The proxy time budget is: {proxy_time_budget_sec} seconds.
 - No network calls. No downloads.
@@ -52,16 +52,34 @@ Guidance:
 - Prefer a validation metric aligned with the task if available (e.g., logloss/AUC/RMSE).
 - If you cannot compute validation metric within time budget, set proxy_metric.value=null and provide fallback_train_loss if available.
 
-## MUTATION GUIDANCE (choose ONE)
-Pick ONE small change, such as:
-- slightly different learning rate / scheduler
-- early stopping patience
-- regularization (weight decay, dropout, L2)
-- label smoothing (classification)
-- class weights (if imbalance is evident)
-- simple feature normalization/standardization step (tabular)
-- light data augmentation tweak (image)
-Do NOT do multiple changes.
+## PROPOSAL TO IMPLEMENT
+```json
+{proposal_json}
+```
+
+## ADDITIONAL CONTEXT
+- Iteration type: {iteration_type}
+- Description analysis:
+```json
+{description_json}
+```
+
+- Profiling summary:
+```json
+{profiling_summary_json}
+```
+
+- Baseline stdout excerpt:
+```text
+{stdout_excerpt}
+```
+
+## TRAINING-TIME BUDGET RULE
+- In proxy mode, the 5-minute budget applies to TRAINING ONLY.
+- Data loading / preprocessing / feature preparation are NOT part of the 5-minute training budget.
+- Start the budget immediately before model.fit()/training loop and stop it immediately after training ends.
+- In proxy mode, avoid writing/overwriting the final submission.csv.
+- In full mode, keep the real submission.csv behavior.
 
 ## BASELINE SCRIPT
 ```python
@@ -78,7 +96,12 @@ Do NOT do multiple changes.
         *,
         baseline_code: str,
         proxy_time_budget_sec: int,
-        mode: str = "mutate",
+        mode: str = "mutate_from_proposal",
+        proposal: Optional[Dict[str, Any]] = None,
+        description_analysis: Optional[Dict[str, Any]] = None,
+        profiling_summary: Optional[Dict[str, Any]] = None,
+        stdout_excerpt: str = "",
+        iteration_type: Optional[str] = None,
     ) -> str:
         class _SafeDict(dict):
             def __missing__(self, key: str) -> str:
@@ -87,9 +110,14 @@ Do NOT do multiple changes.
         values = _SafeDict(
             baseline_code=baseline_code or "",
             proxy_time_budget_sec=int(proxy_time_budget_sec),
-            mode=str(mode or "mutate"),
+            mode=str(mode or "mutate_from_proposal"),
             proxy_start=self.PROXY_START,
             proxy_end=self.PROXY_END,
+            proposal_json=json.dumps(proposal or {}, ensure_ascii=False, indent=2),
+            description_json=json.dumps(description_analysis or {}, ensure_ascii=False, indent=2),
+            profiling_summary_json=json.dumps(profiling_summary or {}, ensure_ascii=False, indent=2),
+            stdout_excerpt=(stdout_excerpt or "")[-4000:],
+            iteration_type=str(iteration_type or "default"),
         )
         return self.template.format_map(values)
 

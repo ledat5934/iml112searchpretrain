@@ -248,6 +248,7 @@ class Manager:
             
         }
         self.task_schema = None
+        self.latest_execution_result = None
         self.task_context = None
         self.knowledge_packs = {}
         self.prompt_fields_by_iteration: Dict[str, Any] = {}
@@ -614,14 +615,21 @@ class Manager:
             # Optional: research phase (3 micro-mutations, proxy rank, full run top-1)
             try:
                 baseline_code = self.assembled_code or ""
+                baseline_stdout = ((self.latest_execution_result or {}).get("stdout", "") if isinstance(self.latest_execution_result, dict) else "")
                 research_out = self.research_phase_agent(
                     baseline_code=baseline_code,
+                    description_analysis=getattr(self, "description_analysis", {}) or {},
+                    profiling_summary=getattr(self, "profiling_summary", {}) or {},
+                    baseline_stdout=baseline_stdout,
                     iteration_type=iteration_type,
                 )
                 self.save_and_log_states(
                     json.dumps(research_out, ensure_ascii=False, indent=2),
                     "research/research_phase_result.json",
                 )
+                full_exec = (research_out or {}).get("full", {})
+                if full_exec and isinstance(full_exec, dict) and full_exec.get("exec", {}).get("success"):
+                    self.assembled_code = full_exec.get("code", self.assembled_code)
             except Exception as e:
                 logger.warning(f"Research phase failed or skipped: {e}")
             
@@ -1445,14 +1453,21 @@ class Manager:
         # Optional: research phase (3 micro-mutations, proxy rank, full run top-1)
         try:
             baseline_code = self.assembled_code or ""
+            baseline_stdout = ((self.latest_execution_result or {}).get("stdout", "") if isinstance(self.latest_execution_result, dict) else "")
             research_out = self.research_phase_agent(
                 baseline_code=baseline_code,
+                description_analysis=getattr(self, "description_analysis", {}) or {},
+                profiling_summary=getattr(self, "profiling_summary", {}) or {},
+                baseline_stdout=baseline_stdout,
                 iteration_type=iteration_type,
             )
             self.save_and_log_states(
                 json.dumps(research_out, ensure_ascii=False, indent=2),
                 "research/research_phase_result.json",
             )
+            full_exec = (research_out or {}).get("full", {})
+            if full_exec and isinstance(full_exec, dict) and full_exec.get("exec", {}).get("success"):
+                self.assembled_code = full_exec.get("code", self.assembled_code)
         except Exception as e:
             logger.warning(f"Research phase failed or skipped: {e}")
         
@@ -1528,6 +1543,27 @@ class Manager:
         self.assembled_code = assembler_result.get("code")
         logger.info(f"Initial script generated and executed successfully.")
 
+        # Optional: research phase (3 proposals, proxy rank, full run top-1)
+        try:
+            baseline_code = self.assembled_code or ""
+            baseline_stdout = ((self.latest_execution_result or {}).get("stdout", "") if isinstance(self.latest_execution_result, dict) else "")
+            research_out = self.research_phase_agent(
+                baseline_code=baseline_code,
+                description_analysis=getattr(self, "description_analysis", {}) or {},
+                profiling_summary=getattr(self, "profiling_summary", {}) or {},
+                baseline_stdout=baseline_stdout,
+                iteration_type="default",
+            )
+            self.save_and_log_states(
+                json.dumps(research_out, ensure_ascii=False, indent=2),
+                "research/research_phase_result.json",
+            )
+            full_exec = (research_out or {}).get("full", {})
+            if full_exec and isinstance(full_exec, dict) and full_exec.get("exec", {}).get("success"):
+                self.assembled_code = full_exec.get("code", self.assembled_code)
+        except Exception as e:
+            logger.warning(f"Research phase failed or skipped: {e}")
+
         logger.info("AutoML pipeline completed successfully!")
 
     def write_code_script(self, script, output_code_file):
@@ -1573,9 +1609,13 @@ class Manager:
             logger.info(f"[iMLstatic] Skipping runtime execution for phase '{phase_name}'. Performing syntax check only.")
             try:
                 compile(code_to_execute, str(script_path), "exec")
-                return {"success": True, "stdout": "", "stderr": ""}
+                result = {"success": True, "stdout": "", "stderr": ""}
+                self.latest_execution_result = {"phase_name": phase_name, "attempt": attempt, **result}
+                return result
             except SyntaxError as exc:
-                return {"success": False, "stdout": "", "stderr": f"SyntaxError: {exc}"}
+                result = {"success": False, "stdout": "", "stderr": f"SyntaxError: {exc}"}
+                self.latest_execution_result = {"phase_name": phase_name, "attempt": attempt, **result}
+                return result
 
         logger.info(f"Executing code from: {script_path}")
 
@@ -1647,16 +1687,22 @@ class Manager:
 
             if process.returncode == 0:
                 logger.info("Code executed successfully.")
-                return {"success": True, "stdout": stdout, "stderr": stderr}
+                result = {"success": True, "stdout": stdout, "stderr": stderr}
+                self.latest_execution_result = {"phase_name": phase_name, "attempt": attempt, **result}
+                return result
             else:
                 logger.error(f"Code execution failed with return code {process.returncode}.")
                 full_error = f"STDOUT:\n{stdout}\n\nSTDERR:\n{stderr}"
-                return {"success": False, "stdout": stdout, "stderr": full_error}
+                result = {"success": False, "stdout": stdout, "stderr": full_error}
+                self.latest_execution_result = {"phase_name": phase_name, "attempt": attempt, **result}
+                return result
         except Exception as e:
             logger.error(f"An exception occurred during code execution: {e}")
             with open(stderr_path, "w") as f:
                 f.write(str(e))
-            return {"success": False, "stdout": "", "stderr": str(e)}
+            result = {"success": False, "stdout": "", "stderr": str(e)}
+            self.latest_execution_result = {"phase_name": phase_name, "attempt": attempt, **result}
+            return result
 
 
     def update_python_code(self):

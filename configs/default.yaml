@@ -64,7 +64,11 @@ monolithic_coder:
 assembler:
   <<: *default_llm
 
-# Optional: research phase (micro-mutation + timeboxed proxy ranking)
+# Optional: research phase
+# - planner proposes exactly 3 different improvements
+# - each candidate runs a proxy evaluation with 5-minute training budget
+# - candidates are ranked by printed proxy metric
+# - top-1 is rerun in full mode
 research_phase:
   enabled: true
   n_candidates: 3
