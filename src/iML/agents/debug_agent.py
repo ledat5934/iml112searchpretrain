@@ -177,10 +177,13 @@ PHASE_NAME: {phase_name}
         except Exception:
             description_json = json.dumps(description, indent=2)
         submission_path_note = ""
-        if phase_name == "assemble":
+        if require_submission:
             expected_name = "submission.csv"
             try:
-                expected_abs = os.path.join(getattr(self.manager, 'output_folder', '.'), expected_name)
+                expected_abs = os.path.join(
+                    getattr(self.manager, 'output_folder', '.'),
+                    expected_name,
+                )
             except Exception:
                 expected_abs = expected_name
             submission_path_note = f"If a submission file is produced, it MUST be saved to this absolute path: {expected_abs}."
@@ -239,10 +242,13 @@ PHASE_NAME: {phase_name}
         raw_text = ""
         # If assembling, enforce explicit absolute submission path in the prompt
         submission_path_note = ""
-        if phase_name == "assemble":
+        if require_submission:
             expected_name = "submission.csv"
             try:
-                expected_abs = os.path.join(getattr(self.manager, 'output_folder', '.'), expected_name)
+                expected_abs = os.path.join(
+                    getattr(self.manager, 'output_folder', '.'),
+                    expected_name,
+                )
             except Exception:
                 expected_abs = expected_name
             submission_path_note = f"If you produce a submission file, you MUST save it to this absolute path: {expected_abs}."
@@ -444,7 +450,7 @@ PHASE_NAME: {phase_name}
             hc_notes: List[str] = []
             if "if __name__ == \"__main__\":" not in refined:
                 hc_notes.append("missing __main__ block")
-            if phase_name == "assemble" and require_submission:
+            if require_submission:
                 # Heuristic: check code references the expected output path
                 expected_name = (submission_filename or "submission.csv")
                 if expected_name not in refined:
@@ -455,7 +461,7 @@ PHASE_NAME: {phase_name}
             # Run refined code
             result = self.manager.execute_code(refined, f"{phase_name}", refined_attempt_index)
             ok = bool(result.get("success"))
-            if ok and require_submission and phase_name == "assemble":
+            if ok and require_submission:
                 # Require artifact existence
                 out_dir = getattr(self.manager, 'output_folder', None) or "."
                 expected = submission_filename or "submission.csv"

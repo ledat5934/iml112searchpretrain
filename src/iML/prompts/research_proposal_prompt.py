@@ -44,10 +44,10 @@ Propose exactly {n_candidates} different improvement directions to try next.
 
 ## OUTPUT FORMAT
 Return valid JSON only:
-{
+{{
   "research_focus": "short paragraph",
   "proposals": [
-    {
+    {{
       "proposal_id": "candidate_1",
       "title": "short title",
       "objective": "what to improve",
@@ -55,9 +55,9 @@ Return valid JSON only:
       "changes": ["specific change 1", "specific change 2"],
       "expected_metric": "metric name",
       "risk_level": "low/medium/high"
-    }
+    }}
   ]
-}
+}}
 """
 
     def build(
@@ -80,5 +80,9 @@ Return valid JSON only:
         )
 
     def parse(self, response: str) -> Dict[str, Any]:
-        cleaned = response.strip().replace("```json", "").replace("```", "")
+        cleaned = (response or "").strip()
+        if "```json" in cleaned:
+            cleaned = cleaned.split("```json", 1)[1].split("```", 1)[0].strip()
+        elif "```" in cleaned:
+            cleaned = cleaned.split("```", 1)[1].split("```", 1)[0].strip()
         return json.loads(cleaned)

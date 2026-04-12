@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -7,6 +8,7 @@ from .base_agent import BaseAgent
 from .utils import init_llm
 from ..prompts.research_proposal_prompt import ResearchProposalPrompt
 from ..prompts.research_mutation_prompt import ResearchMutationPrompt
+from ..utils.file_io import get_directory_structure
 
 logger = logging.getLogger(__name__)
 
@@ -91,6 +93,71 @@ class ResearchPhaseAgent(BaseAgent):
 
         return float("-inf"), "no_usable_metric"
 
+    def _run_with_optional_debug(
+        self,
+        *,
+        code: str,
+        phase_name: str,
+        attempt: int,
+        task_description: str,
+        timeout_sec: Optional[int] = None,
+        termination_grace_sec: Optional[int] = None,
+        require_submission: bool = False,
+        submission_filename: str = "submission.csv",
+    ) -> Tuple[Dict[str, Any], str, Dict[str, Any]]:
+        exec_kwargs: Dict[str, Any] = {}
+        if timeout_sec is not None:
+            exec_kwargs["timeout_sec"] = int(timeout_sec)
+        if termination_grace_sec is not None:
+            exec_kwargs["termination_grace_sec"] = int(termination_grace_sec)
+
+        exec_result = self.manager.execute_code(
+            code,
+            phase_name=phase_name,
+            attempt=attempt,
+            **exec_kwargs,
+        )
+        patched_code = code
+        debug_meta: Dict[str, Any] = {"used": False}
+
+        submission_path = os.path.join(self.manager.output_folder, submission_filename)
+        needs_debug = not bool(exec_result.get("success"))
+        if require_submission and not needs_debug and not os.path.exists(submission_path):
+            needs_debug = True
+            exec_result = {
+                **exec_result,
+                "success": False,
+                "stderr": (
+                    (exec_result.get("stderr", "") or "")
+                    + f"\nExpected output artifact missing: {submission_path}\n"
+                ).strip(),
+            }
+
+        if not needs_debug or not self.manager.is_debug_enabled():
+            return exec_result, patched_code, debug_meta
+
+        filename = "code_generated"
+        datafile_structure = get_directory_structure(self.manager.input_data_folder)
+        ok, patched_code, meta = self.manager.debug_agent.llm_debug_fix(
+            code=code,
+            stderr=exec_result.get("stderr", "") or "",
+            phase_name=phase_name,
+            filename=filename,
+            attempt=attempt,
+            task_description=task_description,
+            datafile_structure=datafile_structure,
+            require_submission=require_submission,
+            submission_filename=submission_filename,
+        )
+        debug_meta = {
+            "used": True,
+            "ok": bool(ok),
+            "meta": meta,
+        }
+        if ok:
+            exec_result = meta.get("last_result", {}) or exec_result
+        return exec_result, patched_code, debug_meta
+
     def __call__(
         self,
         *,
@@ -148,13 +215,22 @@ class ResearchPhaseAgent(BaseAgent):
             self.manager.save_and_log_states(mutated, f"research/{proposal_id}/mutated_code.py")
             candidate_code[proposal_id] = mutated
 
-            exec_result = self.manager.execute_code(
-                mutated,
-                phase_name=f"research/{proposal_id}/proxy",
+            proxy_phase_name = f"research/{proposal_id}/proxy"
+            proxy_task_description = self.manager.build_debug_context(
+                stderr="",
+                code=mutated,
+                phase_name=proxy_phase_name,
                 attempt=1,
+            )
+            exec_result, final_code, debug_meta = self._run_with_optional_debug(
+                code=mutated,
+                phase_name=proxy_phase_name,
+                attempt=1,
+                task_description=proxy_task_description,
                 timeout_sec=int(cfg.proxy_exec_timeout_sec),
                 termination_grace_sec=int(cfg.termination_grace_sec),
             )
+            candidate_code[proposal_id] = final_code
             stdout = exec_result.get("stdout", "") or ""
             proxy = self._parse_proxy_json(stdout)
             score, reason = self._score_proxy(proxy)
@@ -162,6 +238,8 @@ class ResearchPhaseAgent(BaseAgent):
             row = {
                 "candidate": proposal_id,
                 "proposal": proposal,
+                "used_debug_agent": bool(debug_meta.get("used")),
+                "debug_ok": bool(debug_meta.get("ok")),
                 "exec_success": bool(exec_result.get("success")),
                 "proxy": proxy,
                 "score": score,
@@ -203,12 +281,28 @@ class ResearchPhaseAgent(BaseAgent):
         try:
             best_code = candidate_code.get(best_id) or baseline_code
 
-            full_exec = self.manager.execute_code(
-                best_code,
-                phase_name=f"research/{best_id}/full",
+            full_phase_name = f"research/{best_id}/full"
+            full_task_description = self.manager.build_debug_context(
+                stderr="",
+                code=best_code,
+                phase_name=full_phase_name,
                 attempt=1,
             )
-            result["full"] = {"candidate": best_id, "code": best_code, "exec": full_exec}
+            full_exec, best_code, full_debug_meta = self._run_with_optional_debug(
+                code=best_code,
+                phase_name=full_phase_name,
+                attempt=1,
+                task_description=full_task_description,
+                require_submission=True,
+                submission_filename="submission.csv",
+            )
+            result["full"] = {
+                "candidate": best_id,
+                "code": best_code,
+                "exec": full_exec,
+                "used_debug_agent": bool(full_debug_meta.get("used")),
+                "debug_ok": bool(full_debug_meta.get("ok")),
+            }
             self.manager.save_and_log_states(
                 json.dumps(result.get("full", {}), ensure_ascii=False, indent=2),
                 "research/full_result.json",
