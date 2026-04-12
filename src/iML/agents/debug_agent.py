@@ -96,6 +96,7 @@ PHASE_NAME: {phase_name}
         Keep concise to avoid token bloat.
         """
         p = (phase_name or "").lower().strip()
+        phase_leaf = p.split("/")[-1] if p else ""
 
         common = [
             "- Fix the root cause; do not add workaround hacks.",
@@ -134,6 +135,33 @@ PHASE_NAME: {phase_name}
                     *common,
                 ]
             )
+
+        if phase_leaf == "proxy":
+            return "\n".join(
+                [
+                    "RESEARCH PROXY PHASE REQUIREMENTS:",
+                    "- Keep the candidate script runnable end-to-end.",
+                    "- Preserve the research proxy instrumentation logic.",
+                    "- The script MUST print exactly one JSON object between the proxy markers at the end of the run.",
+                    "- Print the start marker line exactly as: ===PROXY_RESULT_START===",
+                    "- Print the end marker line exactly as: ===PROXY_RESULT_END===",
+                    "- The JSON object between those markers MUST remain valid JSON.",
+                    "- Do NOT remove proxy_metric / fallback_train_loss reporting if already present.",
+                    "- Do NOT write submission.csv in proxy phase.",
+                    *common,
+                ]
+            )
+
+        if phase_leaf == "full":
+            lines = [
+                "RESEARCH FULL PHASE REQUIREMENTS:",
+                "- Keep the improved full-run modeling logic intact.",
+                "- The script MUST write submission.csv to the required absolute output path (see Output constraint).",
+                "- The submission MUST NOT be empty/header-only. Never write an empty placeholder submission on failure.",
+                "- Do NOT keep proxy-only behavior that suppresses the real submission artifact.",
+                *common,
+            ]
+            return "\n".join(lines)
 
         lines = ["PHASE REQUIREMENTS:", *common]
         if require_submission:
