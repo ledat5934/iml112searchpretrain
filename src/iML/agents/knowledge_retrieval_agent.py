@@ -6,6 +6,7 @@ import re
 from typing import Any, Dict, List, Optional, Tuple
 
 from .base_agent import BaseAgent
+from .adk_retry import run_with_adk_retry
 from ..prompts.knowledge_retrieval_prompt import KnowledgeRetrievalPrompt
 from .utils import init_llm
 
@@ -175,9 +176,15 @@ class KnowledgeRetrievalAgent(BaseAgent):
             try:
                 loop = asyncio.get_running_loop()
             except RuntimeError:
-                out_text, events, saw = asyncio.run(_run_once())
+                out_text, events, saw = run_with_adk_retry(
+                    lambda: asyncio.run(_run_once()),
+                    operation_name=f"KnowledgeRetrievalAgent ADK search ({save_suffix})",
+                )
             else:
-                out_text, events, saw = loop.run_until_complete(_run_once())
+                out_text, events, saw = run_with_adk_retry(
+                    lambda: loop.run_until_complete(_run_once()),
+                    operation_name=f"KnowledgeRetrievalAgent ADK search ({save_suffix})",
+                )
 
             # Save events + raw output for audit/debug
             try:

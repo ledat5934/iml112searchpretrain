@@ -2,6 +2,7 @@ import json
 import logging
 from typing import Any, Dict, List, Optional
 
+from .adk_retry import run_with_adk_retry
 from .base_agent import BaseAgent
 
 logger = logging.getLogger(__name__)
@@ -75,9 +76,15 @@ class ModelRetrieverAgent(BaseAgent):
             try:
                 loop = asyncio.get_running_loop()
             except RuntimeError:
-                items_json = asyncio.run(_run_once())
+                items_json = run_with_adk_retry(
+                    lambda: asyncio.run(_run_once()),
+                    operation_name="ModelRetrieverAgent ADK search",
+                )
             else:
-                items_json = loop.run_until_complete(_run_once())
+                items_json = run_with_adk_retry(
+                    lambda: loop.run_until_complete(_run_once()),
+                    operation_name="ModelRetrieverAgent ADK search",
+                )
 
             if items_json is not None:
                 try:

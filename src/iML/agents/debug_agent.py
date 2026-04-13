@@ -6,6 +6,7 @@ import logging
 from typing import Dict, Any, List, Tuple, Optional
 
 from .base_agent import BaseAgent
+from .adk_retry import run_with_adk_retry
 from ..llm import ChatLLMFactory
 
 try:
@@ -392,10 +393,16 @@ PHASE_NAME: {phase_name}
             try:
                 asyncio.get_running_loop()
             except RuntimeError:
-                out_text = asyncio.run(_run_once())
+                out_text = run_with_adk_retry(
+                    lambda: asyncio.run(_run_once()),
+                    operation_name=f"DebugAgent ADK refine ({phase_name})",
+                )
             else:
                 with ThreadPoolExecutor(max_workers=1) as ex:
-                    out_text = ex.submit(lambda: asyncio.run(_run_once())).result()
+                    out_text = run_with_adk_retry(
+                        lambda: ex.submit(lambda: asyncio.run(_run_once())).result(),
+                        operation_name=f"DebugAgent ADK refine ({phase_name})",
+                    )
 
             raw_text = out_text
             code_block = self._extract_code_block(raw_text)
