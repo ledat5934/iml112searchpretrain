@@ -7,7 +7,8 @@ from .base_prompt import BasePrompt
 class ResearchMutationPrompt(BasePrompt):
     """
     Prompt to propose a SMALL mutation to a working baseline pipeline script,
-    adding timeboxed proxy-eval (soft stop) and printing a machine-readable proxy result.
+    adding timeboxed proxy-eval (soft stop) and printing a machine-readable proxy result,
+    or converting a ranked proxy candidate into a full-run script.
     """
 
     PROXY_START = "===PROXY_RESULT_START==="
@@ -21,6 +22,7 @@ You are given a WORKING baseline Python pipeline script that trains/evaluates an
 Your task depends on MODE:
 - MODE = "instrument_only": DO NOT change modeling logic/hyperparameters. Only add proxy time budget (soft stop) and proxy result printing.
 - MODE = "mutate_from_proposal": produce ONE improved version of the script that implements the provided proposal, plus the proxy time budget and proxy result printing.
+- MODE = "prepare_full_run": take the selected proxy-ranked candidate script and convert it into a full training/inference script. Keep the chosen improvement, remove proxy-only training limits, and preserve real `submission.csv` generation.
 
 MODE:
 {mode}
@@ -80,6 +82,8 @@ Guidance:
 - Start the budget immediately before model.fit()/training loop and stop it immediately after training ends.
 - In proxy mode, avoid writing/overwriting the final submission.csv.
 - In full mode, keep the real submission.csv behavior.
+- In full mode, remove proxy-only early termination and do NOT enforce the proxy training budget inside the script.
+- In full mode, remove proxy-result marker printing unless it is also useful for normal logging.
 
 ## BASELINE SCRIPT
 ```python
@@ -120,6 +124,28 @@ Guidance:
             iteration_type=str(iteration_type or "default"),
         )
         return self.template.format_map(values)
+
+    def build_full_run(
+        self,
+        *,
+        candidate_code: str,
+        proxy_time_budget_sec: int,
+        proposal: Optional[Dict[str, Any]] = None,
+        description_analysis: Optional[Dict[str, Any]] = None,
+        profiling_summary: Optional[Dict[str, Any]] = None,
+        stdout_excerpt: str = "",
+        iteration_type: Optional[str] = None,
+    ) -> str:
+        return self.build(
+            baseline_code=candidate_code,
+            proxy_time_budget_sec=proxy_time_budget_sec,
+            mode="prepare_full_run",
+            proposal=proposal,
+            description_analysis=description_analysis,
+            profiling_summary=profiling_summary,
+            stdout_excerpt=stdout_excerpt,
+            iteration_type=iteration_type,
+        )
 
     def parse(self, response: str) -> str:
         if "```python" in response:

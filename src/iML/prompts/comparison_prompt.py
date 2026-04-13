@@ -15,7 +15,6 @@ class ComparisonPrompt(BasePrompt):
 
 ## Original Task Context:
 **Dataset**: {dataset_name}
-**Task Type**: {task_type}
 **Problem Description**: {task_description}
 **Target Variable**: {target_variable}
 
@@ -50,7 +49,6 @@ Provide your analysis in the following JSON format:
 ```json
 {{
     "analysis_summary": {{
-        "task_type_detected": "classification/regression",
         "primary_metrics_for_task": ["metric1", "metric2"],
         "total_iterations_analyzed": 3,
         "successful_iterations": 2
@@ -115,7 +113,6 @@ Provide your analysis in the following JSON format:
         
         # Extract task information
         dataset_name = task_description.get('name', 'Unknown Dataset')
-        task_type = task_description.get('task', 'Unknown Task')
         target_variable = task_description.get('target_variable', 'Unknown')
         task_desc = task_description.get('description', 'No description available')
         
@@ -124,7 +121,6 @@ Provide your analysis in the following JSON format:
         
         prompt = self.template.format(
             dataset_name=dataset_name,
-            task_type=task_type,
             task_description=task_desc,
             target_variable=target_variable,
             iteration_results_formatted=formatted_results

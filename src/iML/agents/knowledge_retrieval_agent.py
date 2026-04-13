@@ -47,7 +47,6 @@ class KnowledgeRetrievalAgent(BaseAgent):
     def _build_task_summary(self) -> str:
         desc = getattr(self.manager, "description_analysis", {}) or {}
         prof = getattr(self.manager, "profiling_summary", {}) or {}
-        task_type = (desc.get("task_type") or "unknown").strip()
         task = (desc.get("task") or desc.get("task_description") or "").strip()
         name = (desc.get("name") or "dataset").strip()
         files = ""
@@ -59,7 +58,7 @@ class KnowledgeRetrievalAgent(BaseAgent):
             files = ""
         parts = [
             f"Dataset: {name}",
-            f"Task: {task} ({task_type})" if task else f"Task type: {task_type}",
+            f"Task: {task}" if task else "",
         ]
         if files:
             parts.append(f"Files: {files}")

@@ -7,18 +7,6 @@ from .base_agent import BaseAgent
 logger = logging.getLogger(__name__)
 
 
-def _infer_task_tag(task_type: Optional[str]) -> str:
-    mapping = {
-        "text_classification": "text-classification",
-        "tabular_classification": "tabular-classification",
-        "tabular_regression": "tabular-regression",
-        "image_classification": "image-classification",
-        "ner": "token-classification",
-        "qa": "question-answering",
-        "seq2seq": "text2text-generation",
-    }
-    return mapping.get((task_type or "").lower(), "text-classification")
-
 class ModelRetrieverAgent(BaseAgent):
     """
     Retrieve candidate pretrained models for the problem using Google ADK SOTA search.
@@ -30,13 +18,12 @@ class ModelRetrieverAgent(BaseAgent):
         self.max_results = max_results
 
     def _build_task_summary(self, desc: Dict[str, Any], prof: Optional[Dict[str, Any]] = None) -> str:
-        task_type = desc.get("task_type") or "unknown"
         task = desc.get("task") or ""
         name = desc.get("name") or "dataset"
         files = ", ".join([f.get("name", "") for f in (prof.get("files") or [])][:5]) if prof else ""
         return (
             f"Dataset: {name}\n"
-            f"Task: {task} ({task_type})\n"
+            f"Task: {task}"
             f"Files: {files}"
         )
 

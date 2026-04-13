@@ -158,6 +158,33 @@ class ResearchPhaseAgent(BaseAgent):
             exec_result = meta.get("last_result", {}) or exec_result
         return exec_result, patched_code, debug_meta
 
+    def _prepare_full_run_code(
+        self,
+        *,
+        proposal_id: str,
+        proposal: Dict[str, Any],
+        candidate_code: str,
+        description_analysis: Optional[Dict[str, Any]] = None,
+        profiling_summary: Optional[Dict[str, Any]] = None,
+        baseline_stdout: str = "",
+        iteration_type: str | None = None,
+    ) -> str:
+        prompt = self.prompt_handler.build_full_run(
+            candidate_code=candidate_code,
+            proxy_time_budget_sec=int(self.phase_cfg.proxy_time_budget_sec),
+            proposal=proposal,
+            description_analysis=description_analysis or {},
+            profiling_summary=profiling_summary or {},
+            stdout_excerpt=baseline_stdout or "",
+            iteration_type=iteration_type,
+        )
+        self.manager.save_and_log_states(prompt, f"research/{proposal_id}/full_prepare_prompt.txt")
+        resp = self.llm.assistant_chat(prompt)
+        self.manager.save_and_log_states(resp, f"research/{proposal_id}/full_prepare_raw_response.txt")
+        full_code = self.prompt_handler.parse(resp)
+        self.manager.save_and_log_states(full_code, f"research/{proposal_id}/full_prepared_code.py")
+        return full_code
+
     def __call__(
         self,
         *,
@@ -279,7 +306,18 @@ class ResearchPhaseAgent(BaseAgent):
 
         # Full run for top-1 candidate
         try:
-            best_code = candidate_code.get(best_id) or baseline_code
+            winning_row = next((row for row in leaderboard if row.get("candidate") == best_id), None) or {}
+            winning_proposal = winning_row.get("proposal") or {}
+            best_proxy_code = candidate_code.get(best_id) or baseline_code
+            best_code = self._prepare_full_run_code(
+                proposal_id=best_id,
+                proposal=winning_proposal,
+                candidate_code=best_proxy_code,
+                description_analysis=description_analysis or {},
+                profiling_summary=profiling_summary or {},
+                baseline_stdout=baseline_stdout or "",
+                iteration_type=iteration_type,
+            )
 
             full_phase_name = f"research/{best_id}/full"
             full_task_description = self.manager.build_debug_context(
@@ -298,6 +336,9 @@ class ResearchPhaseAgent(BaseAgent):
             )
             result["full"] = {
                 "candidate": best_id,
+                "proposal": winning_proposal,
+                "proxy_code_path": f"states/research/{best_id}/mutated_code.py",
+                "full_code_path": f"states/research/{best_id}/full_prepared_code.py",
                 "code": best_code,
                 "exec": full_exec,
                 "used_debug_agent": bool(full_debug_meta.get("used")),

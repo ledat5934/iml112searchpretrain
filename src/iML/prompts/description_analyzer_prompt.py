@@ -15,7 +15,6 @@ Extract the following information:
 - "input_data": A description of the primary input data for the model.
 - "output_data": A description of the expected output format from the model.
 - "task": A summary of the main objective or task of the competition.
-- "task_type": One of ["text_classification","image_classification","tabular_classification","tabular_regression","seq2seq","ner","qa","unknown"] inferred from the description and directory structure.
 - "data file description": A dictionary where the keys are relative path to the file (e.g., "train.csv", "test.csv") and the values are their descriptions. (only the file or folder name, not the father directory)
 - "submission file description": A dictionary describing the submission file columns (column name -> meaning).
 - "eval_metrics": The evaluation metric for this task (get from description; if not found choose an appropriate metric).
@@ -36,7 +35,6 @@ Welcome to the 'Paddy Disease Classification' challenge! The goal is to classify
     "input_data": "The input data consists of images of rice plants (JPG files).",
     "output_data": "The model should output a class label corresponding to one of ten possible diseases.",
     "task": "The main goal is to build a model that can classify diseases in rice paddy images.",
-    "task_type": "image_classification",
     "data file description": {{
         "train.csv": "Maps image IDs to their respective disease labels.",
         "train_images": "A folder containing the training images as JPG files.",
