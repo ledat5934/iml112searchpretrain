@@ -327,9 +327,9 @@ PHASE_NAME: {phase_name}
 
             runner = InMemoryRunner(agent=root, app_name="bug-refine")
             user_id = "debugger"
-            session_id = f"bugfix-{uuid.uuid4().hex[:8]}"
 
             async def _run_once():
+                session_id = f"bugfix-{uuid.uuid4().hex[:8]}"
                 await runner.session_service.create_session(
                     app_name="bug-refine", user_id=user_id, session_id=session_id
                 )

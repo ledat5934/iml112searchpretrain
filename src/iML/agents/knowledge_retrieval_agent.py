@@ -125,10 +125,10 @@ class KnowledgeRetrievalAgent(BaseAgent):
 
             runner = InMemoryRunner(agent=root, app_name="knowledge-search")
             user_id = "manager"
-            session_id = f"knowledge-{uuid.uuid4().hex[:8]}"
-            user_msg = adk_types.Content(role="user", parts=[adk_types.Part(text="run")])
 
             async def _run_once():
+                session_id = f"knowledge-{uuid.uuid4().hex[:8]}"
+                user_msg = adk_types.Content(role="user", parts=[adk_types.Part(text="run")])
                 await runner.session_service.create_session(
                     app_name="knowledge-search",
                     user_id=user_id,

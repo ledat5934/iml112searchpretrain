@@ -51,8 +51,6 @@ class ArchitectureRetrieverAgent(BaseAgent):
             runner = InMemoryRunner(agent=root_agent, app_name="architecture-search")
 
             user_id = "manager"
-            session_id = f"arch-{uuid.uuid4().hex[:8]}"
-            user_msg = gen_types.Content(role="user", parts=[gen_types.Part(text="run")])
 
             def _strip_fences_txt(s: str) -> str:
                 s = _re.sub(r"```+\w*\n", "", s)
@@ -60,6 +58,8 @@ class ArchitectureRetrieverAgent(BaseAgent):
                 return s
 
             async def _run_once():
+                session_id = f"arch-{uuid.uuid4().hex[:8]}"
+                user_msg = gen_types.Content(role="user", parts=[gen_types.Part(text="run")])
                 await runner.session_service.create_session(
                     app_name="architecture-search",
                     user_id=user_id,

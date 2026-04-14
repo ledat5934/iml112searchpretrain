@@ -40,8 +40,6 @@ class ModelRetrieverAgent(BaseAgent):
             runner = InMemoryRunner(agent=root_agent, app_name="sota-search")
 
             user_id = "manager"
-            session_id = f"sota-{uuid.uuid4().hex[:8]}"
-            user_msg = gen_types.Content(role="user", parts=[gen_types.Part(text="run")])
 
             def _strip_fences_txt(s: str) -> str:
                 s = _re.sub(r"```+\w*\n", "", s)
@@ -49,6 +47,8 @@ class ModelRetrieverAgent(BaseAgent):
                 return s
 
             async def _run_once():
+                session_id = f"sota-{uuid.uuid4().hex[:8]}"
+                user_msg = gen_types.Content(role="user", parts=[gen_types.Part(text="run")])
                 await runner.session_service.create_session(
                     app_name="sota-search",
                     user_id=user_id,
