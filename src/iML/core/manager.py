@@ -252,6 +252,9 @@ class Manager:
         self.task_context = None
         self.knowledge_packs = {}
         self.prompt_fields_by_iteration: Dict[str, Any] = {}
+        self.assembled_code = None
+        self.preprocessing_code = None
+        self.modeling_code = None
 
     def get_prompt_fields(self, iteration_type: str | None = None) -> Dict[str, Any]:
         """
@@ -380,7 +383,7 @@ class Manager:
 
     def _run_research_phase(self, iteration_type: str | None = None) -> Dict[str, Any]:
         """Run the optional research phase for the current output folder."""
-        baseline_code = self.assembled_code or ""
+        baseline_code = getattr(self, "assembled_code", None) or ""
         baseline_stdout = (
             (self.latest_execution_result or {}).get("stdout", "")
             if isinstance(self.latest_execution_result, dict)
@@ -588,6 +591,7 @@ class Manager:
                                 self.output_folder = str(original_output_folder)
                                 continue
                             candidate_success = True
+                            self.assembled_code = assembler_result.get("code")
 
                         if candidate_success:
                             cand_submission = candidate_dir / "submission.csv"
@@ -1433,6 +1437,7 @@ class Manager:
                             self.output_folder = str(original_output_folder)
                             continue
                         candidate_success = True
+                        self.assembled_code = assembler_result.get("code")
 
                     if candidate_success:
                         cand_submission = candidate_dir / "submission.csv"
