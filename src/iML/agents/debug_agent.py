@@ -83,6 +83,8 @@ PHASE_NAME: {phase_name}
 - Please revise the code to fix the error.
 - If the error is a 'module not found` error, then install the necessary module. You can use `pip install <module>`, where `<module>` is the name of the module to install.
 - Do not remove subsampling if exists.
+- For assemble/monolithic phases, preserve and enforce deployment artifact contract from Output constraint and Phase requirements.
+- Do NOT return partial code (e.g., imports only, stubs, unfinished try blocks).
 - Provide the improved, self-contained Python script again.
 - There should be no additional headings or text in your response.
 - The code should be a single-file python program that is self-contained and can be executed as-is.
@@ -118,7 +120,14 @@ PHASE_NAME: {phase_name}
                 [
                     "ASSEMBLE PHASE REQUIREMENTS:",
                     "- The script MUST write submission.csv to the required absolute output path (see Output constraint).",
+                    "- The script MUST create a deployment folder at the required absolute path (see Output constraint).",
+                    "- The deployment folder MUST include reusable artifacts for inference WITHOUT retraining: trained model artifact, preprocessing artifacts, inference metadata/config, and manifest.json.",
+                    "- Canonical manifest path is deployment/manifest.json (valid JSON; NOT deployment_manifest.json).",
+                    "- Manifest schema: each artifact is an object with at least a `filename` field (e.g., {'model': {'filename': 'model.joblib', 'role': 'model'}}).",
+                    "- Do NOT use loose path-only manifest styles like model_path/vectorizer_path/model_artifact/preprocessing_artifacts.",
+                    "- Manifest must reference only existing files and include at least one model artifact and one preprocessing artifact.",
                     "- The submission MUST NOT be empty/header-only. Never write an empty placeholder submission on failure.",
+                    "- If deployment artifacts are missing/invalid, exit non-zero to trigger debugging; do not silently continue.",
                     "- If submission validation fails, exit non-zero to trigger debugging; do not silently continue.",
                     *common,
                 ]
@@ -129,7 +138,14 @@ PHASE_NAME: {phase_name}
                 [
                     "MONOLITHIC PHASE REQUIREMENTS:",
                     "- The script is end-to-end and MUST write submission.csv to the required absolute output path (see Output constraint).",
+                    "- The script MUST create a deployment folder at the required absolute path (see Output constraint).",
+                    "- The deployment folder MUST include reusable artifacts for inference WITHOUT retraining: trained model artifact, preprocessing artifacts, inference metadata/config, and manifest.json.",
+                    "- Canonical manifest path is deployment/manifest.json (valid JSON; NOT deployment_manifest.json).",
+                    "- Manifest schema: each artifact is an object with at least a `filename` field (e.g., {'model': {'filename': 'model.joblib', 'role': 'model'}}).",
+                    "- Do NOT use loose path-only manifest styles like model_path/vectorizer_path/model_artifact/preprocessing_artifacts.",
+                    "- Manifest must reference only existing files and include at least one model artifact and one preprocessing artifact.",
                     "- The submission MUST NOT be empty/header-only. Never write an empty placeholder submission on failure.",
+                    "- If deployment artifacts are missing/invalid, exit non-zero to trigger debugging; do not silently continue.",
                     "- If submission validation fails, exit non-zero to trigger debugging; do not silently continue.",
                     *common,
                 ]
@@ -139,6 +155,67 @@ PHASE_NAME: {phase_name}
         if require_submission:
             lines.insert(1, "- This phase requires a valid submission.csv artifact (non-empty).")
         return "\n".join(lines)
+
+    def _build_output_constraint_note(self, phase_name: str, submission_filename: Optional[str] = None) -> str:
+        """Build explicit absolute output constraints for submission and deployment artifacts."""
+        p = (phase_name or "").lower().strip()
+        if p not in {"assemble", "assembler", "monolithic"}:
+            return ""
+
+        expected_name = submission_filename or "submission.csv"
+        try:
+            output_dir = getattr(self.manager, "output_folder", ".")
+            expected_abs = os.path.join(output_dir, expected_name)
+            deployment_abs = os.path.join(output_dir, "deployment")
+        except Exception:
+            expected_abs = expected_name
+            deployment_abs = "deployment"
+
+        return (
+            f"Submission MUST be saved to this absolute path: {expected_abs}. "
+            f"Deployment artifacts MUST be saved under this absolute folder: {deployment_abs}. "
+            "Deployment MUST contain reusable inference artifacts (model + preprocessing + metadata + manifest.json) without retraining. "
+            f"Canonical manifest path: {os.path.join(deployment_abs, 'manifest.json')} (valid JSON)."
+        )
+
+    def _validate_deployment_manifest(self, deployment_dir: str) -> Tuple[bool, str]:
+        """Validate deployment manifest integrity and referenced files existence."""
+        manifest_path = os.path.join(deployment_dir, "manifest.json")
+        if not os.path.exists(manifest_path):
+            return False, f"missing manifest at {manifest_path}"
+
+        try:
+            with open(manifest_path, "r", encoding="utf-8") as f:
+                manifest = json.load(f)
+        except Exception as e:
+            return False, f"invalid manifest JSON: {e}"
+
+        if not isinstance(manifest, dict) or not manifest:
+            return False, "manifest must be a non-empty JSON object"
+
+        existing_files = set(os.listdir(deployment_dir)) if os.path.isdir(deployment_dir) else set()
+        referenced_files: List[str] = []
+        for _, value in manifest.items():
+            if isinstance(value, dict):
+                fn = value.get("filename")
+                if isinstance(fn, str) and fn.strip():
+                    referenced_files.append(fn)
+
+        if not referenced_files:
+            return False, "manifest does not contain any artifact filename entries"
+
+        missing_refs = [fn for fn in referenced_files if fn not in existing_files]
+        if missing_refs:
+            return False, f"manifest references missing artifact(s): {missing_refs[:5]}"
+
+        has_model = any(re.search(r"model|clf|estimator|weights?", fn, flags=re.I) for fn in referenced_files)
+        has_preproc = any(re.search(r"scaler|vectorizer|tokenizer|encoder|preprocess", fn, flags=re.I) for fn in referenced_files)
+        if not has_model:
+            return False, "manifest has no model artifact reference"
+        if not has_preproc:
+            return False, "manifest has no preprocessing artifact reference"
+
+        return True, "ok"
 
     # ── LLM step A: Summarize error (no search) ─────────────────────
     def _get_description(self) -> dict:
@@ -165,6 +242,7 @@ PHASE_NAME: {phase_name}
         attempt_index: int,
         datafile_structure: Optional[str] = None,
         require_submission: bool = False,
+        submission_filename: Optional[str] = None,
     ) -> str:
         # Choose an LLM config available (reuse assembler)
         llm_config = getattr(self.manager.assembler_agent, 'llm_config', None)
@@ -176,14 +254,7 @@ PHASE_NAME: {phase_name}
             description_json = json.dumps(description, ensure_ascii=False, indent=2)
         except Exception:
             description_json = json.dumps(description, indent=2)
-        submission_path_note = ""
-        if phase_name == "assemble":
-            expected_name = "submission.csv"
-            try:
-                expected_abs = os.path.join(getattr(self.manager, 'output_folder', '.'), expected_name)
-            except Exception:
-                expected_abs = expected_name
-            submission_path_note = f"If a submission file is produced, it MUST be saved to this absolute path: {expected_abs}."
+        submission_path_note = self._build_output_constraint_note(phase_name, submission_filename=submission_filename)
 
         phase_requirements = self._get_phase_requirements(phase_name, require_submission=require_submission)
         prompt = self.BUG_SUMMARY_INSTR.format(
@@ -229,6 +300,7 @@ PHASE_NAME: {phase_name}
         attempt_index: int,
         datafile_structure: Optional[str] = None,
         require_submission: bool = False,
+        submission_filename: Optional[str] = None,
     ) -> tuple[str, str, str]:
         # Pull description from manager to include context
         description = self._get_description() or {}
@@ -237,15 +309,8 @@ PHASE_NAME: {phase_name}
         except Exception:
             description_json = json.dumps(description, indent=2)
         raw_text = ""
-        # If assembling, enforce explicit absolute submission path in the prompt
-        submission_path_note = ""
-        if phase_name == "assemble":
-            expected_name = "submission.csv"
-            try:
-                expected_abs = os.path.join(getattr(self.manager, 'output_folder', '.'), expected_name)
-            except Exception:
-                expected_abs = expected_name
-            submission_path_note = f"If you produce a submission file, you MUST save it to this absolute path: {expected_abs}."
+        # Enforce explicit absolute output paths in the prompt for assemble/monolithic.
+        submission_path_note = self._build_output_constraint_note(phase_name, submission_filename=submission_filename)
 
         phase_requirements = self._get_phase_requirements(phase_name, require_submission=require_submission)
         prompt_text = self.BUG_REFINE_INSTR.format(
@@ -421,6 +486,7 @@ PHASE_NAME: {phase_name}
                 bug_attempt_index,
                 datafile_structure=datafile_structure,
                 require_submission=require_submission,
+                submission_filename=submission_filename,
             )
             # 2) Refine code for the next attempt
             refined_attempt_index = bug_attempt_index + 1
@@ -432,6 +498,7 @@ PHASE_NAME: {phase_name}
                 refined_attempt_index,
                 datafile_structure=datafile_structure,
                 require_submission=require_submission,
+                submission_filename=submission_filename,
             )
             self.logger.detail(
                 f"[DEBUG_AGENT] round={round_idx} phase={phase_name} refined_attempt_index={refined_attempt_index} "
@@ -444,22 +511,40 @@ PHASE_NAME: {phase_name}
             hc_notes: List[str] = []
             if "if __name__ == \"__main__\":" not in refined:
                 hc_notes.append("missing __main__ block")
-            if phase_name == "assemble" and require_submission:
+            p = (phase_name or "").lower().strip()
+            if p in {"assemble", "assembler", "monolithic"} and require_submission:
                 # Heuristic: check code references the expected output path
                 expected_name = (submission_filename or "submission.csv")
                 if expected_name not in refined:
                     hc_notes.append(f"code does not reference {expected_name}")
+                if "deployment" not in refined:
+                    hc_notes.append("code does not reference deployment artifacts")
+                if "manifest.json" not in refined:
+                    hc_notes.append("code does not reference canonical manifest.json")
 
             # Save refined code snapshot into the attempt folder
             self.manager.save_and_log_states(refined, f"{phase_name}/attempt_{refined_attempt_index}/generated_code.py")
             # Run refined code
             result = self.manager.execute_code(refined, f"{phase_name}", refined_attempt_index)
             ok = bool(result.get("success"))
-            if ok and require_submission and phase_name == "assemble":
+            if ok and require_submission and p in {"assemble", "assembler", "monolithic"}:
                 # Require artifact existence
                 out_dir = getattr(self.manager, 'output_folder', None) or "."
                 expected = submission_filename or "submission.csv"
-                ok = os.path.exists(os.path.join(out_dir, expected))
+                submission_ok = os.path.exists(os.path.join(out_dir, expected))
+                deployment_dir = os.path.join(out_dir, "deployment")
+                deployment_ok = os.path.isdir(deployment_dir)
+                manifest_ok = os.path.exists(os.path.join(deployment_dir, "manifest.json"))
+                manifest_contract_ok = False
+                manifest_reason = "manifest check skipped"
+                if deployment_ok and manifest_ok:
+                    manifest_contract_ok, manifest_reason = self._validate_deployment_manifest(deployment_dir)
+                ok = submission_ok and deployment_ok and manifest_ok and manifest_contract_ok
+                if not ok:
+                    hc_notes.append(
+                        f"artifact validation failed: submission_ok={submission_ok}, deployment_ok={deployment_ok}, "
+                        f"manifest_ok={manifest_ok}, manifest_contract_ok={manifest_contract_ok} ({manifest_reason})"
+                    )
             self.logger.info(
                 f"[DEBUG_AGENT] round={round_idx} phase={phase_name} attempt_index={refined_attempt_index} "
                 f"exec_success={bool(result.get('success'))} require_submission_ok={ok}"

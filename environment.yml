@@ -7,5 +7,5 @@ dependencies:
   - python=3.11
   - ipykernel
 variables:
-  GEMINI_API_KEY: AIzaSyAytAhE71103Gd9YN6jeEF0OL4O0p_XhIQ
+  GEMINI_API_KEY: "your_gemini_api_key_here"
 prefix: /home/shiinehata/anaconda3/envs/iml

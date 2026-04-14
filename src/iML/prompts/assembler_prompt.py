@@ -1,5 +1,6 @@
 # src/iML/prompts/assembler_prompt.py
 import json
+from pathlib import Path
 from typing import Dict, Any
 
 from .base_prompt import BasePrompt
@@ -23,20 +24,46 @@ Your task is to ensure the script is clean, robust, and correct.
 1.  **Final Script**: The output must be a single, standalone, executable Python file and it should be run on the real data.
 2.  **Validation Score**: If validation data is available, you MUST calculate and print a relevant validation score.
 3.  **Absolute Output Path**: The script MUST save `submission.csv` to the following absolute path: `{output_path}`.
-4.  **Error Handling (NO SILENT FAILURE)**:
+4.  **MANDATORY DEPLOYMENT ARTIFACTS**: In addition to `submission.csv`, the script MUST create a folder named `deployment` at this absolute path: `{deployment_path}` (same level as `submission.csv`).
+        - The `deployment` folder MUST contain enough artifacts to run preprocessing + inference later WITHOUT retraining.
+        - **Use canonical manifest name exactly**: `deployment/manifest.json` (NOT `deployment_manifest.json` and no truncated JSON).
+                - **Manifest contract MUST follow this exact structural style (JSON object; each artifact entry is an object with `filename`)**:
+                    ```json
+                    {{
+                        "model": {{"filename": "model.joblib", "role": "model"}},
+                        "preprocessing_main": {{"filename": "preprocessor.joblib", "role": "preprocessing"}},
+                        "label_encoder": {{"filename": "label_encoder.joblib", "role": "preprocessing"}},
+                        "metadata": {{"filename": "metadata.json", "role": "metadata"}}
+                    }}
+                    ```
+                - Do NOT use loose path-style manifest keys such as `model_path`, `vectorizer_path`, `model_artifact`, `preprocessing_artifacts`.
+        - At minimum, persist:
+            - trained model weights/object (e.g., `.pt`, `.pkl`, `.joblib`, etc.)
+            - preprocessing artifacts (encoders/scalers/tokenizer/config/feature map) required for consistent preprocessing
+            - inference configuration/metadata (feature columns, target mapping, label encoder mapping, model class, versions if available)
+            - `manifest.json` listing all artifacts and how to load them.
+        - The script MUST include a reusable loading path/function that can perform inference from `deployment` artifacts without calling any training routine.
+        - Before writing new artifacts, clear stale deployment outputs in `{deployment_path}` (or overwrite deterministically) so old files cannot create false success.
+        - After writing artifacts, MUST validate deployment integrity:
+            - `manifest.json` is valid JSON (`json.load` succeeds)
+            - every artifact referenced in manifest exists on disk
+            - at least one model artifact and one preprocessing artifact are loadable
+        - The script MUST fail (stderr + non-zero exit) if required deployment artifacts are missing/invalid after save.
+5.  **Error Handling (NO SILENT FAILURE)**:
     - Maintain a single `try...except` block for robust execution.
     - If ANY exception occurs, you MUST print the error to stderr and **exit with a non-zero status code** (`sys.exit(1)`).
     - **NEVER** "handle errors" by creating a placeholder/empty `submission.csv` (e.g., using `sample_submission.csv` columns with zero rows).
     - **NEVER** swallow exceptions and continue as if successful.
-5.  **Submission Integrity (MUST NOT BE EMPTY)**:
+6.  **Submission Integrity (MUST NOT BE EMPTY)**:
     - You MUST only write `submission.csv` after predictions are successfully produced.
     - After writing, verify `submission.csv` is not empty (has at least 1 data row, not just header).
     - If a `sample_submission.csv` exists in the dataset paths, validate that the produced submission has the same columns/order.
     - If any submission validation fails, treat it as a failure: print an error to stderr and `sys.exit(1)`.
-6.  **Clarity**: Ensure the final script is clean and well-structured.
-7.  **Sample Submission File**: Sample submission file given is for template reference (Columns) only. You have to use the test data or test file to generate predictions and your right submission file. In some cases, you must browse the test image folder to get the IDs and data.
-8.  **Do not add any other code.**
-9.  **Data Loading**: Keep the data loading code of the preprocessing code. DO NOT CHANGE THE FILE PATHS FROM THE ORIGINAL CODE.
+7.  **Clarity**: Ensure the final script is clean and well-structured.
+8.  **Sample Submission File**: Sample submission file given is for template reference (Columns) only. You have to use the test data or test file to generate predictions and your right submission file. In some cases, you must browse the test image folder to get the IDs and data.
+9.  **Do not add any other code.**
+10.  **Data Loading**: Keep the data loading code of the preprocessing code. DO NOT CHANGE THE FILE PATHS FROM THE ORIGINAL CODE.
+11. **NO PARTIAL SCRIPT OUTPUT**: Do not output import-only or stub code. Return a complete executable script with training, submission generation, deployment saving, and deployment validation.
 
 ## DATAFILE STRUCTURE (SUMMARY)
 {datafile_structure}
@@ -102,12 +129,15 @@ The code above failed with the following error.
             additional_context = f"\n\n## ITERATION-SPECIFIC CONTEXT:\n{iteration_guidance}"
             retry_context += additional_context
 
+        deployment_path = str((Path(output_path).parent / "deployment").resolve())
+
         prompt = self.template.format(
             dataset_name=description.get('name', 'N/A'),
             file_paths=description.get('link to the dataset', []),
             output_data_format=description.get('output_data', 'N/A'),
             original_code=original_code,
             output_path=output_path,
+            deployment_path=deployment_path,
             retry_context=retry_context,
             datafile_structure=datafile_structure or "N/A",
         )

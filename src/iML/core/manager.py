@@ -30,6 +30,7 @@ from ..agents import (
     ComparisonAgent,
     DebugAgent,
     PromptDeciderAgent,
+    DeploymentAgent,
 )
 from ..agents.comparison_agent import IterationResultExtractor
 from ..llm import ChatLLMFactory
@@ -205,6 +206,12 @@ class Manager:
             manager=self,
             llm_config=self.config.assembler,  # Using same LLM config as assembler
         )
+        deployment_llm = getattr(self.config, "deployment_agent", None) or self.config.assembler
+        self.deployment_agent = DeploymentAgent(
+            config=config,
+            manager=self,
+            llm_config=deployment_llm,
+        )
         # Initialize DebugAgent once for search-driven patching across phases
         self.debug_agent = DebugAgent(
             config=config,
@@ -221,6 +228,19 @@ class Manager:
         self.task_context = None
         self.knowledge_packs = {}
         self.prompt_fields_by_iteration: Dict[str, Any] = {}
+
+    def _run_deployment_stage(self, iteration_type: str | None = None) -> bool:
+        """Run post-assembly deployment validation/refactor stage."""
+        try:
+            result = self.deployment_agent(iteration_type=iteration_type)
+            if result.get("status") == "success":
+                logger.info("DeploymentAgent completed successfully.")
+                return True
+            logger.error(f"DeploymentAgent failed: {result.get('error', 'unknown error')}")
+            return False
+        except Exception as e:
+            logger.error(f"DeploymentAgent crashed: {e}")
+            return False
 
     def get_prompt_fields(self, iteration_type: str | None = None) -> Dict[str, Any]:
         """
@@ -473,6 +493,9 @@ class Manager:
                                 continue
                             candidate_success = True
                             self.assembled_code = mono_result.get("code")
+                            if not self._run_deployment_stage(iteration_type=iteration_type):
+                                logger.error(f"Deployment stage failed for candidate {idx}.")
+                                candidate_success = False
                         else:
                             # Preprocessing
                             if timeout_occurred.is_set():
@@ -503,6 +526,10 @@ class Manager:
                                 self.output_folder = str(original_output_folder)
                                 continue
                             candidate_success = True
+                            self.assembled_code = assembler_result.get("code")
+                            if not self._run_deployment_stage(iteration_type=iteration_type):
+                                logger.error(f"Deployment stage failed for candidate {idx}.")
+                                candidate_success = False
 
                         if candidate_success:
                             cand_submission = candidate_dir / "submission.csv"
@@ -546,6 +573,8 @@ class Manager:
                     logger.error(f"Monolithic generation failed: {mono_result.get('error')}")
                     return False
                 self.assembled_code = mono_result.get("code")
+                if not self._run_deployment_stage(iteration_type=iteration_type):
+                    return False
                 return True
 
             # Step 2: Run Preprocessing Coder Agent
@@ -579,6 +608,8 @@ class Manager:
                 logger.error(f"Final code assembly and execution failed: {assembler_result.get('error')}")
                 return False
             self.assembled_code = assembler_result.get("code")
+            if not self._run_deployment_stage(iteration_type=iteration_type):
+                return False
             logger.info("Final script generated and executed successfully.")
             
             return True
@@ -812,6 +843,8 @@ class Manager:
                 logger.error(f"Final code assembly and execution failed: {assembler_result.get('error')}")
                 return False
             self.assembled_code = assembler_result.get("code")
+            if not self._run_deployment_stage(iteration_type="default"):
+                return False
             logger.info("Initial script generated and executed successfully.")
 
         logger.info("AutoML pipeline completed successfully!")
@@ -1310,6 +1343,9 @@ class Manager:
                             continue
                         candidate_success = True
                         self.assembled_code = mono_result.get("code")
+                        if not self._run_deployment_stage(iteration_type=iteration_type):
+                            logger.error(f"Deployment stage failed for candidate {idx}.")
+                            candidate_success = False
                     else:
                         # Preprocessing
                         preprocessing_code_result = self.preprocessing_coder_agent(iteration_type=iteration_type)
@@ -1334,6 +1370,10 @@ class Manager:
                             self.output_folder = str(original_output_folder)
                             continue
                         candidate_success = True
+                        self.assembled_code = assembler_result.get("code")
+                        if not self._run_deployment_stage(iteration_type=iteration_type):
+                            logger.error(f"Deployment stage failed for candidate {idx}.")
+                            candidate_success = False
 
                     if candidate_success:
                         cand_submission = candidate_dir / "submission.csv"
@@ -1372,6 +1412,8 @@ class Manager:
                 logger.error(f"Monolithic generation failed: {mono_result.get('error')}")
                 return False
             self.assembled_code = mono_result.get("code")
+            if not self._run_deployment_stage(iteration_type=iteration_type):
+                return False
             return True
 
         # Step 2: Run Preprocessing Coder Agent
@@ -1396,6 +1438,8 @@ class Manager:
             logger.error(f"Final code assembly and execution failed: {assembler_result.get('error')}")
             return False
         self.assembled_code = assembler_result.get("code")
+        if not self._run_deployment_stage(iteration_type=iteration_type):
+            return False
         logger.info("Final script generated and executed successfully.")
         
         return True
@@ -1468,6 +1512,8 @@ class Manager:
             return
         
         self.assembled_code = assembler_result.get("code")
+        if not self._run_deployment_stage(iteration_type="default"):
+            return
         logger.info(f"Initial script generated and executed successfully.")
 
         logger.info("AutoML pipeline completed successfully!")
