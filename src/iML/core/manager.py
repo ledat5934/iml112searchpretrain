@@ -378,6 +378,60 @@ class Manager:
             "target_identification": target_info,
         }
 
+    def _run_research_phase(self, iteration_type: str | None = None) -> Dict[str, Any]:
+        """Run the optional research phase for the current output folder."""
+        baseline_code = self.assembled_code or ""
+        baseline_stdout = (
+            (self.latest_execution_result or {}).get("stdout", "")
+            if isinstance(self.latest_execution_result, dict)
+            else ""
+        )
+        research_out = self.research_phase_agent(
+            baseline_code=baseline_code,
+            description_analysis=getattr(self, "description_analysis", {}) or {},
+            profiling_summary=getattr(self, "profiling_summary", {}) or {},
+            baseline_stdout=baseline_stdout,
+            iteration_type=iteration_type,
+        )
+        self.save_and_log_states(
+            json.dumps(research_out, ensure_ascii=False, indent=2),
+            "research/research_phase_result.json",
+        )
+        full_exec = (research_out or {}).get("full", {})
+        if full_exec and isinstance(full_exec, dict) and full_exec.get("exec", {}).get("success"):
+            self.assembled_code = full_exec.get("code", self.assembled_code)
+        return research_out
+
+    def _run_research_for_pretrained_winner(self, parent_iter_dir: Path, winner_idx: int, iteration_type: str) -> None:
+        """
+        Run research inside the winning pretrained candidate directory and sync the
+        improved submission back to the parent iteration folder when successful.
+        """
+        candidate_dir = parent_iter_dir / f"candidate_{winner_idx}"
+        if not candidate_dir.exists():
+            logger.warning(f"Skipping research for pretrained winner: candidate directory missing: {candidate_dir}")
+            return
+
+        original_output_folder = self.output_folder
+        self.output_folder = str(candidate_dir)
+        try:
+            research_out = self._run_research_phase(iteration_type=iteration_type)
+            full_exec = (research_out or {}).get("full", {})
+            if full_exec and isinstance(full_exec, dict) and full_exec.get("exec", {}).get("success"):
+                improved_submission = candidate_dir / "submission.csv"
+                if improved_submission.exists():
+                    shutil.copy2(improved_submission, parent_iter_dir / "submission.csv")
+                    shutil.copy2(improved_submission, parent_iter_dir / f"submission_cand_{winner_idx}.csv")
+                else:
+                    logger.warning(
+                        "Research full run succeeded for pretrained winner but submission.csv "
+                        f"was not found in {candidate_dir}."
+                    )
+        except Exception as e:
+            logger.warning(f"Research phase failed or skipped: {e}")
+        finally:
+            self.output_folder = str(original_output_folder)
+
     def get_iteration_timeout(self, iteration_type):
         """Get the execution timeout for a specific iteration type."""
         # Check if iteration_timeouts configuration exists
@@ -553,6 +607,14 @@ class Manager:
                         # Restore output folder for next candidate
                         self.output_folder = str(original_output_folder)
 
+                    if any_success and first_success_idx is not None:
+                        if timeout_occurred.is_set():
+                            raise IterationTimeoutError("Iteration timeout occurred before research phase")
+                        self._run_research_for_pretrained_winner(
+                            parent_iter_dir=parent_iter_dir,
+                            winner_idx=first_success_idx,
+                            iteration_type=iteration_type,
+                        )
                     return any_success
             else:
                 # Ensure other iterations are not influenced by retrieval results
@@ -614,22 +676,7 @@ class Manager:
 
             # Optional: research phase (3 micro-mutations, proxy rank, full run top-1)
             try:
-                baseline_code = self.assembled_code or ""
-                baseline_stdout = ((self.latest_execution_result or {}).get("stdout", "") if isinstance(self.latest_execution_result, dict) else "")
-                research_out = self.research_phase_agent(
-                    baseline_code=baseline_code,
-                    description_analysis=getattr(self, "description_analysis", {}) or {},
-                    profiling_summary=getattr(self, "profiling_summary", {}) or {},
-                    baseline_stdout=baseline_stdout,
-                    iteration_type=iteration_type,
-                )
-                self.save_and_log_states(
-                    json.dumps(research_out, ensure_ascii=False, indent=2),
-                    "research/research_phase_result.json",
-                )
-                full_exec = (research_out or {}).get("full", {})
-                if full_exec and isinstance(full_exec, dict) and full_exec.get("exec", {}).get("success"):
-                    self.assembled_code = full_exec.get("code", self.assembled_code)
+                self._run_research_phase(iteration_type=iteration_type)
             except Exception as e:
                 logger.warning(f"Research phase failed or skipped: {e}")
             
@@ -1405,6 +1452,12 @@ class Manager:
                     # Restore output folder for next candidate
                     self.output_folder = str(original_output_folder)
 
+                if any_success and first_success_idx is not None:
+                    self._run_research_for_pretrained_winner(
+                        parent_iter_dir=parent_iter_dir,
+                        winner_idx=first_success_idx,
+                        iteration_type=iteration_type,
+                    )
                 return any_success
 
         else:
@@ -1452,22 +1505,7 @@ class Manager:
 
         # Optional: research phase (3 micro-mutations, proxy rank, full run top-1)
         try:
-            baseline_code = self.assembled_code or ""
-            baseline_stdout = ((self.latest_execution_result or {}).get("stdout", "") if isinstance(self.latest_execution_result, dict) else "")
-            research_out = self.research_phase_agent(
-                baseline_code=baseline_code,
-                description_analysis=getattr(self, "description_analysis", {}) or {},
-                profiling_summary=getattr(self, "profiling_summary", {}) or {},
-                baseline_stdout=baseline_stdout,
-                iteration_type=iteration_type,
-            )
-            self.save_and_log_states(
-                json.dumps(research_out, ensure_ascii=False, indent=2),
-                "research/research_phase_result.json",
-            )
-            full_exec = (research_out or {}).get("full", {})
-            if full_exec and isinstance(full_exec, dict) and full_exec.get("exec", {}).get("success"):
-                self.assembled_code = full_exec.get("code", self.assembled_code)
+            self._run_research_phase(iteration_type=iteration_type)
         except Exception as e:
             logger.warning(f"Research phase failed or skipped: {e}")
         
