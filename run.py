@@ -1,6 +1,9 @@
 import argparse
 import sys
 from pathlib import Path
+from dotenv import load_dotenv
+
+load_dotenv() 
 
 project_root = Path(__file__).parent
 src_path = project_root / "src"
