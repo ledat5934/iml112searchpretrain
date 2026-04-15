@@ -26,10 +26,10 @@ search_mode: hybrid
 
 # Default LLM Configuration
 llm: &default_llm
-  provider: gemini
-  model: gemini-2.5-flash
+  provider: openai
+  model: google/gemma-4-31b-it:free
   max_tokens: 16384
-  proxy_url: null
+  proxy_url: https://openrouter.ai/api/v1
   temperature: 0.0
   top_p: 0.9
   verbose: True

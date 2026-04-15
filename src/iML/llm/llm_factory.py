@@ -55,6 +55,16 @@ class ChatLLMFactory:
 
         valid_models = cls.get_valid_models(provider)
         valid_models = ['gemini-2.5-flash']
+        # Override the temporary hardcoded validation above without editing it.
+        # OpenRouter exposes OpenAI-compatible chat endpoints, so allow explicitly
+        # configured OpenRouter models when provider=openai.
+        proxy_url = getattr(config, "proxy_url", "") or ""
+        is_openrouter = provider == "openai" and "openrouter.ai" in proxy_url.lower()
+        if is_openrouter:
+            openrouter_allowlist = {
+                "google/gemma-4-31b-it:free",
+            }
+            valid_models = list(set(valid_models + list(openrouter_allowlist)))
         if model not in valid_models:
             if model[3:] not in valid_models:  # TODO: better logic for cross region inference
                 raise ValueError(
