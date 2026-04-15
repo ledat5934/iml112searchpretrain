@@ -48,18 +48,18 @@ class ChatLLMFactory:
         """Get a configured chat model instance using LangGraph patterns."""
         provider = config.provider
         model = config.model
+        proxy_url = getattr(config, "proxy_url", "") or ""
+        is_openrouter = provider == "openai" and "openrouter.ai" in proxy_url.lower()
 
         valid_providers = cls.get_valid_providers()
         if provider not in valid_providers:
             raise ValueError(f"Invalid provider: {provider}. Must be one of {valid_providers}")
 
-        valid_models = cls.get_valid_models(provider)
+        valid_models = [] if is_openrouter else cls.get_valid_models(provider)
         valid_models = ['gemini-2.5-flash']
         # Override the temporary hardcoded validation above without editing it.
         # OpenRouter exposes OpenAI-compatible chat endpoints, so allow explicitly
         # configured OpenRouter models when provider=openai.
-        proxy_url = getattr(config, "proxy_url", "") or ""
-        is_openrouter = provider == "openai" and "openrouter.ai" in proxy_url.lower()
         if is_openrouter:
             openrouter_allowlist = {
                 "google/gemma-4-31b-it:free",
