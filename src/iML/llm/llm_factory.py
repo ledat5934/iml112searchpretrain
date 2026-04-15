@@ -63,6 +63,7 @@ class ChatLLMFactory:
         if is_openrouter:
             openrouter_allowlist = {
                 "google/gemma-4-31b-it:free",
+                "google/gemma-4-26b-a4b-it:free"
             }
             valid_models = list(set(valid_models + list(openrouter_allowlist)))
         if model not in valid_models:
