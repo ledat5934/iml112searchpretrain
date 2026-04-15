@@ -66,6 +66,11 @@ class ChatLLMFactory:
                 "google/gemma-4-26b-a4b-it:free"
             }
             valid_models = list(set(valid_models + list(openrouter_allowlist)))
+        if provider == "gemini":
+            gemini_allowlist = {
+                "gemini-3.1-flash-lite-preview",
+            }
+            valid_models = list(set(valid_models + list(gemini_allowlist)))
         if model not in valid_models:
             if model[3:] not in valid_models:  # TODO: better logic for cross region inference
                 raise ValueError(

@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class ResearchPhaseConfig:
     enabled: bool = False
+    max_iterations: int = 2
     n_candidates: int = 3
     proxy_time_budget_sec: int = 300
     proxy_exec_timeout_sec: int = 330  # give code time to soft-stop and wrap up
@@ -27,7 +28,8 @@ class ResearchPhaseAgent(BaseAgent):
     """
     After baseline code is working, propose 3 different improvements,
     generate improved candidates, run timeboxed proxy eval, rank them,
-    then run full eval for top-1.
+    then run full eval for top-1. The winning full-run candidate can replace
+    the incumbent baseline and seed the next research iteration.
     """
 
     def __init__(self, config, manager, llm_config, phase_cfg: Optional[ResearchPhaseConfig] = None):
@@ -161,6 +163,7 @@ class ResearchPhaseAgent(BaseAgent):
     def _prepare_full_run_code(
         self,
         *,
+        run_root: str,
         proposal_id: str,
         proposal: Dict[str, Any],
         candidate_code: str,
@@ -178,16 +181,79 @@ class ResearchPhaseAgent(BaseAgent):
             stdout_excerpt=baseline_stdout or "",
             iteration_type=iteration_type,
         )
-        self.manager.save_and_log_states(prompt, f"research/{proposal_id}/full_prepare_prompt.txt")
+        self.manager.save_and_log_states(prompt, f"{run_root}/{proposal_id}/full_prepare_prompt.txt")
         resp = self.llm.assistant_chat(prompt)
-        self.manager.save_and_log_states(resp, f"research/{proposal_id}/full_prepare_raw_response.txt")
+        self.manager.save_and_log_states(resp, f"{run_root}/{proposal_id}/full_prepare_raw_response.txt")
         full_code = self.prompt_handler.parse(resp)
-        self.manager.save_and_log_states(full_code, f"research/{proposal_id}/full_prepared_code.py")
+        self.manager.save_and_log_states(full_code, f"{run_root}/{proposal_id}/full_prepared_code.py")
         return full_code
 
-    def __call__(
+    def _compare_candidate_vs_baseline(
         self,
         *,
+        run_root: str,
+        baseline_stdout: str,
+        candidate_stdout: str,
+        iteration_type: str | None = None,
+    ) -> Dict[str, Any]:
+        prompt = (
+            "You are comparing a current baseline ML run against one new candidate run.\n"
+            "Use ONLY the stdout evidence below. Prefer the run with better validation/test metrics. "
+            "If the evidence is inconclusive, keep the baseline.\n\n"
+            f"ITERATION_TYPE: {iteration_type or 'default'}\n\n"
+            "Return ONLY valid JSON with this schema:\n"
+            "{"
+            "\"winner\": \"baseline\" | \"candidate\", "
+            "\"confidence\": \"low\" | \"medium\" | \"high\", "
+            "\"reason\": \"short string\""
+            "}\n\n"
+            "BASELINE STDOUT:\n"
+            "<<<BASELINE>>>\n"
+            f"{(baseline_stdout or '')[-4000:]}\n"
+            "<<<END_BASELINE>>>\n\n"
+            "CANDIDATE STDOUT:\n"
+            "<<<CANDIDATE>>>\n"
+            f"{(candidate_stdout or '')[-4000:]}\n"
+            "<<<END_CANDIDATE>>>\n"
+        )
+        self.manager.save_and_log_states(prompt, f"{run_root}/stdout_compare_prompt.txt")
+        response = self.llm.assistant_chat(prompt)
+        self.manager.save_and_log_states(response, f"{run_root}/stdout_compare_raw_response.txt")
+        try:
+            cleaned = response.strip()
+            if "```json" in cleaned:
+                start = cleaned.find("```json") + 7
+                end = cleaned.rfind("```")
+                if end > start:
+                    cleaned = cleaned[start:end].strip()
+            elif "```" in cleaned:
+                start = cleaned.find("```") + 3
+                end = cleaned.rfind("```")
+                if end > start:
+                    cleaned = cleaned[start:end].strip()
+            parsed = json.loads(cleaned)
+        except Exception as e:
+            parsed = {
+                "winner": "baseline",
+                "confidence": "low",
+                "reason": f"stdout_compare_parse_failed: {e}",
+            }
+        if parsed.get("winner") not in {"baseline", "candidate"}:
+            parsed["winner"] = "baseline"
+        if parsed.get("confidence") not in {"low", "medium", "high"}:
+            parsed["confidence"] = "low"
+        if not parsed.get("reason"):
+            parsed["reason"] = "invalid_or_missing_reason"
+        self.manager.save_and_log_states(
+            json.dumps(parsed, ensure_ascii=False, indent=2),
+            f"{run_root}/stdout_compare_result.json",
+        )
+        return parsed
+
+    def _run_iteration(
+        self,
+        *,
+        run_root: str,
         baseline_code: str,
         description_analysis: Optional[Dict[str, Any]] = None,
         profiling_summary: Optional[Dict[str, Any]] = None,
@@ -195,11 +261,6 @@ class ResearchPhaseAgent(BaseAgent):
         iteration_type: str | None = None,
     ) -> Dict[str, Any]:
         cfg = self.phase_cfg
-        if not cfg.enabled:
-            return {"skipped": True, "reason": "research_phase_disabled"}
-
-        self.manager.log_agent_start("ResearchPhaseAgent: planning and evaluating improvements...")
-
         try:
             proposal_prompt = self.proposal_prompt.build(
                 description_analysis=description_analysis or {},
@@ -209,12 +270,11 @@ class ResearchPhaseAgent(BaseAgent):
                 n_candidates=int(cfg.n_candidates),
                 iteration_type=iteration_type,
             )
-            self.manager.save_and_log_states(proposal_prompt, "research/proposals_prompt.txt")
+            self.manager.save_and_log_states(proposal_prompt, f"{run_root}/proposals_prompt.txt")
             proposal_resp = self.llm.assistant_chat(proposal_prompt)
-            self.manager.save_and_log_states(proposal_resp, "research/proposals_raw_response.txt")
+            self.manager.save_and_log_states(proposal_resp, f"{run_root}/proposals_raw_response.txt")
             proposal_payload = self.proposal_prompt.parse(proposal_resp)
         except Exception as e:
-            self.manager.log_agent_end("ResearchPhaseAgent: proposal generation failed.")
             return {"skipped": False, "error": f"proposal_generation_failed: {e}"}
 
         leaderboard: List[Dict[str, Any]] = []
@@ -235,14 +295,14 @@ class ResearchPhaseAgent(BaseAgent):
                 stdout_excerpt=baseline_stdout or "",
                 iteration_type=iteration_type,
             )
-            self.manager.save_and_log_states(prompt, f"research/{proposal_id}/prompt.txt")
+            self.manager.save_and_log_states(prompt, f"{run_root}/{proposal_id}/prompt.txt")
             resp = self.llm.assistant_chat(prompt)
-            self.manager.save_and_log_states(resp, f"research/{proposal_id}/raw_response.txt")
+            self.manager.save_and_log_states(resp, f"{run_root}/{proposal_id}/raw_response.txt")
             mutated = self.prompt_handler.parse(resp)
-            self.manager.save_and_log_states(mutated, f"research/{proposal_id}/mutated_code.py")
+            self.manager.save_and_log_states(mutated, f"{run_root}/{proposal_id}/mutated_code.py")
             candidate_code[proposal_id] = mutated
 
-            proxy_phase_name = f"research/{proposal_id}/proxy"
+            proxy_phase_name = f"{run_root}/{proposal_id}/proxy"
             proxy_task_description = self.manager.build_debug_context(
                 stderr="",
                 code=mutated,
@@ -278,7 +338,6 @@ class ResearchPhaseAgent(BaseAgent):
                 best_score = score
                 best_id = proposal_id
 
-        # Persist leaderboard
         self.manager.save_and_log_states(
             json.dumps(
                 {
@@ -289,7 +348,7 @@ class ResearchPhaseAgent(BaseAgent):
                 ensure_ascii=False,
                 indent=2,
             ),
-            "research/leaderboard.json",
+            f"{run_root}/leaderboard.json",
         )
 
         result: Dict[str, Any] = {
@@ -299,17 +358,16 @@ class ResearchPhaseAgent(BaseAgent):
         }
 
         if best_id is None:
-            self.manager.log_agent_end("ResearchPhaseAgent: no usable proxy score; skipping full.")
             result["full_skipped"] = True
             result["full_reason"] = "no_best_candidate"
             return result
 
-        # Full run for top-1 candidate
         try:
             winning_row = next((row for row in leaderboard if row.get("candidate") == best_id), None) or {}
             winning_proposal = winning_row.get("proposal") or {}
             best_proxy_code = candidate_code.get(best_id) or baseline_code
             best_code = self._prepare_full_run_code(
+                run_root=run_root,
                 proposal_id=best_id,
                 proposal=winning_proposal,
                 candidate_code=best_proxy_code,
@@ -319,7 +377,7 @@ class ResearchPhaseAgent(BaseAgent):
                 iteration_type=iteration_type,
             )
 
-            full_phase_name = f"research/{best_id}/full"
+            full_phase_name = f"{run_root}/{best_id}/full"
             full_task_description = self.manager.build_debug_context(
                 stderr="",
                 code=best_code,
@@ -337,8 +395,8 @@ class ResearchPhaseAgent(BaseAgent):
             result["full"] = {
                 "candidate": best_id,
                 "proposal": winning_proposal,
-                "proxy_code_path": f"states/research/{best_id}/mutated_code.py",
-                "full_code_path": f"states/research/{best_id}/full_prepared_code.py",
+                "proxy_code_path": f"states/{run_root}/{best_id}/mutated_code.py",
+                "full_code_path": f"states/{run_root}/{best_id}/full_prepared_code.py",
                 "code": best_code,
                 "exec": full_exec,
                 "used_debug_agent": bool(full_debug_meta.get("used")),
@@ -346,11 +404,88 @@ class ResearchPhaseAgent(BaseAgent):
             }
             self.manager.save_and_log_states(
                 json.dumps(result.get("full", {}), ensure_ascii=False, indent=2),
-                "research/full_result.json",
+                f"{run_root}/full_result.json",
             )
         except Exception as e:
             result["full"] = {"candidate": best_id, "error": str(e)}
 
+        return result
+
+    def __call__(
+        self,
+        *,
+        baseline_code: str,
+        description_analysis: Optional[Dict[str, Any]] = None,
+        profiling_summary: Optional[Dict[str, Any]] = None,
+        baseline_stdout: str = "",
+        iteration_type: str | None = None,
+    ) -> Dict[str, Any]:
+        cfg = self.phase_cfg
+        if not cfg.enabled:
+            return {"skipped": True, "reason": "research_phase_disabled"}
+
+        self.manager.log_agent_start("ResearchPhaseAgent: planning and evaluating improvements...")
+        current_baseline_code = baseline_code
+        current_baseline_stdout = baseline_stdout or ""
+        adopted_full: Optional[Dict[str, Any]] = None
+        iteration_results: List[Dict[str, Any]] = []
+
+        for iteration_idx in range(1, max(1, int(cfg.max_iterations)) + 1):
+            run_root = f"research/iter_{iteration_idx}"
+            iter_result = self._run_iteration(
+                run_root=run_root,
+                baseline_code=current_baseline_code,
+                description_analysis=description_analysis,
+                profiling_summary=profiling_summary,
+                baseline_stdout=current_baseline_stdout,
+                iteration_type=iteration_type,
+            )
+            iter_result["iteration_index"] = iteration_idx
+            iteration_results.append(iter_result)
+
+            full_result = (iter_result or {}).get("full", {})
+            full_exec = full_result.get("exec", {}) if isinstance(full_result, dict) else {}
+            if not (isinstance(full_exec, dict) and full_exec.get("success")):
+                iter_result["selection"] = {
+                    "winner": "baseline",
+                    "confidence": "low",
+                    "reason": "full_run_failed_or_missing",
+                }
+                break
+
+            compare_result = self._compare_candidate_vs_baseline(
+                run_root=run_root,
+                baseline_stdout=current_baseline_stdout,
+                candidate_stdout=full_exec.get("stdout", "") or "",
+                iteration_type=iteration_type,
+            )
+            iter_result["selection"] = compare_result
+
+            if compare_result.get("winner") != "candidate":
+                break
+
+            current_baseline_code = full_result.get("code") or current_baseline_code
+            current_baseline_stdout = full_exec.get("stdout", "") or current_baseline_stdout
+            adopted_full = full_result
+
+        result: Dict[str, Any] = {
+            "iterations": iteration_results,
+            "final_baseline_code": current_baseline_code,
+            "final_baseline_stdout": current_baseline_stdout,
+        }
+        if adopted_full is not None:
+            result["full"] = adopted_full
+        elif iteration_results:
+            result["full_skipped"] = True
+            result["full_reason"] = (iteration_results[-1].get("selection") or {}).get("reason", "baseline_kept")
+        else:
+            result["full_skipped"] = True
+            result["full_reason"] = "no_iterations_ran"
+
+        self.manager.save_and_log_states(
+            json.dumps(result, ensure_ascii=False, indent=2),
+            "research/research_summary.json",
+        )
         self.manager.log_agent_end("ResearchPhaseAgent: completed.")
         return result
 

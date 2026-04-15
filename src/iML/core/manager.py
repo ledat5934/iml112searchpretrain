@@ -208,6 +208,7 @@ class Manager:
         try:
             if isinstance(research_cfg, dict):
                 phase_cfg.enabled = bool(research_cfg.get("enabled", phase_cfg.enabled))
+                phase_cfg.max_iterations = int(research_cfg.get("max_iterations", phase_cfg.max_iterations))
                 phase_cfg.n_candidates = int(research_cfg.get("n_candidates", phase_cfg.n_candidates))
                 phase_cfg.proxy_time_budget_sec = int(research_cfg.get("proxy_time_budget_sec", phase_cfg.proxy_time_budget_sec))
                 phase_cfg.proxy_exec_timeout_sec = int(research_cfg.get("proxy_exec_timeout_sec", phase_cfg.proxy_exec_timeout_sec))
@@ -216,6 +217,7 @@ class Manager:
             elif research_cfg is not None:
                 # attribute-style config object
                 phase_cfg.enabled = bool(getattr(research_cfg, "enabled", phase_cfg.enabled))
+                phase_cfg.max_iterations = int(getattr(research_cfg, "max_iterations", phase_cfg.max_iterations))
                 phase_cfg.n_candidates = int(getattr(research_cfg, "n_candidates", phase_cfg.n_candidates))
                 phase_cfg.proxy_time_budget_sec = int(getattr(research_cfg, "proxy_time_budget_sec", phase_cfg.proxy_time_budget_sec))
                 phase_cfg.proxy_exec_timeout_sec = int(getattr(research_cfg, "proxy_exec_timeout_sec", phase_cfg.proxy_exec_timeout_sec))
@@ -403,6 +405,7 @@ class Manager:
         full_exec = (research_out or {}).get("full", {})
         if full_exec and isinstance(full_exec, dict) and full_exec.get("exec", {}).get("success"):
             self.assembled_code = full_exec.get("code", self.assembled_code)
+            self.latest_execution_result = full_exec.get("exec", self.latest_execution_result)
         return research_out
 
     def _run_research_for_pretrained_winner(self, parent_iter_dir: Path, winner_idx: int, iteration_type: str) -> None:

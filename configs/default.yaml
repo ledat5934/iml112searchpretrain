@@ -26,10 +26,10 @@ search_mode: hybrid
 
 # Default LLM Configuration
 llm: &default_llm
-  provider: openai
-  model: google/gemma-4-31b-it:free
+  provider: gemini
+  model: gemini-3.1-flash-lite-preview
   max_tokens: 16384
-  proxy_url: https://openrouter.ai/api/v1
+  proxy_url: null
   temperature: 0.0
   top_p: 0.9
   verbose: True
@@ -71,6 +71,7 @@ assembler:
 # - top-1 is rerun in full mode
 research_phase:
   enabled: true
+  max_iterations: 2
   n_candidates: 3
   proxy_time_budget_sec: 300
   # Allow a bit more than proxy budget so the script can soft-stop and exit cleanly.
