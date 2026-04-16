@@ -35,8 +35,14 @@ Propose exactly {n_candidates} different improvement directions to try next.
 {baseline_code}
 ```
 
+- Previously attempted research directions:
+```json
+{previous_directions_json}
+```
+
 ## RULES
 - Proposals must be materially different from one another.
+- Proposals must also be materially different from previously attempted directions.
 - Each proposal should be implementable as a single improved version of the existing script.
 - Prefer changes that can be evaluated by a short proxy run.
 - Do not propose full architecture rewrites unless clearly justified by the task.
@@ -69,6 +75,7 @@ Return valid JSON only:
         stdout_excerpt: str,
         n_candidates: int,
         iteration_type: str | None = None,
+        previous_directions: list[Dict[str, Any]] | None = None,
     ) -> str:
         return self.template.format(
             iteration_type=iteration_type or "default",
@@ -76,6 +83,7 @@ Return valid JSON only:
             profiling_summary_json=json.dumps(profiling_summary or {}, indent=2, ensure_ascii=False),
             baseline_code=baseline_code or "",
             stdout_excerpt=(stdout_excerpt or "")[-4000:],
+            previous_directions_json=json.dumps(previous_directions or [], indent=2, ensure_ascii=False),
             n_candidates=int(n_candidates),
         )
 

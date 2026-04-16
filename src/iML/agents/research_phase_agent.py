@@ -259,6 +259,7 @@ class ResearchPhaseAgent(BaseAgent):
         profiling_summary: Optional[Dict[str, Any]] = None,
         baseline_stdout: str = "",
         iteration_type: str | None = None,
+        previous_directions: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
         cfg = self.phase_cfg
         try:
@@ -269,6 +270,7 @@ class ResearchPhaseAgent(BaseAgent):
                 stdout_excerpt=baseline_stdout or "",
                 n_candidates=int(cfg.n_candidates),
                 iteration_type=iteration_type,
+                previous_directions=previous_directions or [],
             )
             self.manager.save_and_log_states(proposal_prompt, f"{run_root}/proposals_prompt.txt")
             proposal_resp = self.llm.assistant_chat(proposal_prompt)
@@ -429,6 +431,7 @@ class ResearchPhaseAgent(BaseAgent):
         current_baseline_stdout = baseline_stdout or ""
         adopted_full: Optional[Dict[str, Any]] = None
         iteration_results: List[Dict[str, Any]] = []
+        previous_directions: List[Dict[str, Any]] = []
 
         for iteration_idx in range(1, max(1, int(cfg.max_iterations)) + 1):
             run_root = f"research/iter_{iteration_idx}"
@@ -439,9 +442,25 @@ class ResearchPhaseAgent(BaseAgent):
                 profiling_summary=profiling_summary,
                 baseline_stdout=current_baseline_stdout,
                 iteration_type=iteration_type,
+                previous_directions=previous_directions,
             )
             iter_result["iteration_index"] = iteration_idx
             iteration_results.append(iter_result)
+
+            for row in (iter_result.get("leaderboard") or []):
+                proposal = row.get("proposal") or {}
+                if not proposal:
+                    continue
+                previous_directions.append(
+                    {
+                        "iteration_index": iteration_idx,
+                        "proposal_id": row.get("candidate"),
+                        "title": proposal.get("title"),
+                        "objective": proposal.get("objective"),
+                        "changes": proposal.get("changes", []),
+                        "score_reason": row.get("score_reason"),
+                    }
+                )
 
             full_result = (iter_result or {}).get("full", {})
             full_exec = full_result.get("exec", {}) if isinstance(full_result, dict) else {}
@@ -451,7 +470,7 @@ class ResearchPhaseAgent(BaseAgent):
                     "confidence": "low",
                     "reason": "full_run_failed_or_missing",
                 }
-                break
+                continue
 
             compare_result = self._compare_candidate_vs_baseline(
                 run_root=run_root,
@@ -461,12 +480,10 @@ class ResearchPhaseAgent(BaseAgent):
             )
             iter_result["selection"] = compare_result
 
-            if compare_result.get("winner") != "candidate":
-                break
-
-            current_baseline_code = full_result.get("code") or current_baseline_code
-            current_baseline_stdout = full_exec.get("stdout", "") or current_baseline_stdout
-            adopted_full = full_result
+            if compare_result.get("winner") == "candidate":
+                current_baseline_code = full_result.get("code") or current_baseline_code
+                current_baseline_stdout = full_exec.get("stdout", "") or current_baseline_stdout
+                adopted_full = full_result
 
         result: Dict[str, Any] = {
             "iterations": iteration_results,
