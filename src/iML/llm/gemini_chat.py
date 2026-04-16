@@ -57,6 +57,9 @@ def create_gemini_chat(config, session_name: str) -> AssistantChatGemini:
         "session_name": session_name,
     }
 
+    if hasattr(config, "fallback_model"):
+        kwargs["fallback_model"] = config.fallback_model
+
     if hasattr(config, "max_tokens"):
         kwargs["max_output_tokens"] = config.max_tokens
 

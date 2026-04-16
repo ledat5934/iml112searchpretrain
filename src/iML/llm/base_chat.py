@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import uuid
+from contextlib import contextmanager
 from typing import Any, Dict, List, Optional
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
@@ -9,7 +10,7 @@ from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import START, MessagesState, StateGraph
 from pydantic import BaseModel, ConfigDict, Field
-from tenacity import retry, stop_after_attempt, wait_exponential
+from tenacity import Retrying, stop_after_attempt, wait_exponential
 
 logger = logging.getLogger(__name__)
 
@@ -131,6 +132,7 @@ class BaseAssistantChat(BaseModel):
     token_tracker: GlobalTokenTracker = Field(default_factory=GlobalTokenTracker)
     conversation_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     session_name: str = Field(default="default_session")
+    fallback_model: Optional[str] = Field(default=None)
 
     def initialize_conversation(
         self,
@@ -174,7 +176,76 @@ class BaseAssistantChat(BaseModel):
             "session_name": self.session_name,
         }
 
-    @retry(stop=stop_after_attempt(6), wait=wait_exponential(multiplier=32, min=32, max=128), after=log_retry_attempt)
+    def _is_transient_llm_error(self, exc: Exception) -> bool:
+        text = str(exc or "").lower()
+        transient_markers = (
+            "503",
+            "unavailable",
+            "high demand",
+            "resource exhausted",
+            "rate limit",
+            "too many requests",
+            "deadline exceeded",
+            "timed out",
+            "timeout",
+            "temporarily unavailable",
+            "internal error",
+            "service unavailable",
+            "connection reset",
+        )
+        return any(marker in text for marker in transient_markers)
+
+    @contextmanager
+    def _temporary_model(self, replacement_model: Optional[str]):
+        if not replacement_model:
+            yield
+            return
+
+        attr_name = None
+        if hasattr(self, "model"):
+            attr_name = "model"
+        elif hasattr(self, "model_name"):
+            attr_name = "model_name"
+
+        if attr_name is None:
+            yield
+            return
+
+        original_model = getattr(self, attr_name)
+        if original_model == replacement_model:
+            yield
+            return
+
+        logger.warning(
+            f"LLM session {self.session_name} falling back from {original_model} to {replacement_model}."
+        )
+        setattr(self, attr_name, replacement_model)
+        try:
+            yield
+        finally:
+            setattr(self, attr_name, original_model)
+
+    def _invoke_with_retry(self, message: str) -> Dict[str, Any]:
+        if not self.app:
+            raise RuntimeError("Conversation not initialized. Call initialize_conversation first.")
+
+        thread_id = str(uuid.uuid4())
+        config = {"configurable": {"thread_id": thread_id}}
+        input_messages = [HumanMessage(content=message)]
+        response = None
+
+        for attempt in Retrying(
+            stop=stop_after_attempt(6),
+            wait=wait_exponential(multiplier=16, min=16, max=64),
+            after=log_retry_attempt,
+            reraise=True,
+        ):
+            with attempt:
+                response = self.app.invoke({"messages": input_messages}, config)
+
+        assert response is not None
+        return response
+
     def assistant_chat(self, message: str, max_lines: int = 1000) -> str:
         """Send a message and get response using LangGraph."""
         if not self.app:
@@ -185,10 +256,14 @@ class BaseAssistantChat(BaseModel):
             message = '\n'.join(lines[:max_lines])
             logger.warning(f"Prompt truncated to {max_lines} lines.")
 
-        thread_id = str(uuid.uuid4())
-        config = {"configurable": {"thread_id": thread_id}}
-        input_messages = [HumanMessage(content=message)]
-        response = self.app.invoke({"messages": input_messages}, config)
+        try:
+            response = self._invoke_with_retry(message)
+        except Exception as exc:
+            if self.fallback_model and self._is_transient_llm_error(exc):
+                with self._temporary_model(self.fallback_model):
+                    response = self._invoke_with_retry(message)
+            else:
+                raise
 
         ai_message = response["messages"][-1]
         input_tokens = output_tokens = 0

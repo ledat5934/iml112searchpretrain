@@ -28,6 +28,7 @@ search_mode: hybrid
 llm: &default_llm
   provider: gemini
   model: gemini-3.1-flash-lite-preview
+  fallback_model: gemini-2.5-flash
   max_tokens: 16384
   proxy_url: null
   temperature: 0.0
