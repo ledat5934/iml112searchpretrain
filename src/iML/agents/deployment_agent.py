@@ -182,9 +182,20 @@ STRICT REQUIREMENTS:
        - `label` MUST be the decoded class label (string/int matching what training used,
          applying inverse_transform of the saved label encoder when applicable).
        - `confidence` MUST be the probability of the predicted class:
-             * If the underlying model exposes `predict_proba`, use `max(predict_proba(x))`.
-             * Else if it exposes `decision_function`, apply softmax (multiclass) or sigmoid (binary)
-               and use `max(prob)`.
+             * If the underlying model exposes `predict_proba`, take the row-wise max of the
+               probability matrix:
+                   probs = model.predict_proba(features)   # shape (n_samples, n_classes)
+                   confidence = float(probs[i].max())      # per-sample
+               This is equivalent to the probability of the predicted class because
+               `model.predict()` is `classes_[argmax(predict_proba(x))]`.
+             * DO NOT index probabilities by the raw predicted class value, e.g.
+               `probs[i, pred_label_encoded]`. That only works when class values happen
+               to be `0, 1, 2, ...`. It silently returns the wrong column (or raises
+               IndexError) for any other label encoding (string labels, sparse ids,
+               LabelEncoder reordering, dropped classes, etc.). Always use `.max()` or
+               `argmax`-based lookup against `model.classes_` instead.
+             * Else if it exposes `decision_function`, apply softmax (multiclass) or sigmoid
+               (binary) to the row, then take the row-wise max as confidence.
              * Else, fall back to `confidence = 1.0` and ALSO log a clear warning to stderr.
        - Do NOT return raw numpy arrays for classification; always wrap as the list-of-dicts above.
 
