@@ -74,6 +74,15 @@ The following preprocessing code, including a function `preprocess_data(file_pat
 16. **INPUT CONTRACT (MUST FOLLOW)**:
     - You MUST follow the MODEL INPUT DATA CONTRACT (if provided) and the input contract notes.
     - Consume the output of `preprocess_data()` exactly as specified by that contract.
+17. **DEPLOYMENT-FRIENDLY OUTPUT (downstream contract)**:
+    - For **classification** tasks, prefer a model that natively exposes probabilities (`predict_proba`,
+      softmax head, etc.). If the chosen model lacks it, wrap it with `CalibratedClassifierCV`
+      so probabilities are available at inference time WITHOUT retraining.
+    - Keep enough information to decode predicted labels back to their original values
+      (e.g. fit + persist a `LabelEncoder`, or remember `model.classes_`), so deployment can
+      return `{{"label": <decoded>, "confidence": <prob>}}` per sample.
+    - For **regression** tasks, ensure predictions can be cast to plain Python `float` so
+      deployment can return `{{"value": <float>}}` per sample.
 """
 
     def build(

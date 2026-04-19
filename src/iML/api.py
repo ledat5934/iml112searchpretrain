@@ -156,8 +156,17 @@ class IMLPredictor:
         """
         Run inference using deployment artifacts.
 
-        This method is intentionally adapter-based as a template.
-        Plug in a project-specific `inference_fn` for stable production behavior.
+        Output contract (enforced by DeploymentAgent prompt):
+            - Classification: list of dicts, one per input sample, in input order:
+                  [{"label": <decoded_label>, "confidence": <float in [0, 1]>}, ...]
+            - Regression: list of dicts, one per input sample:
+                  [{"value": <float>}, ...]
+            - Single-sample inputs still return a list of length 1.
+
+        This method is intentionally adapter-based as a template:
+        plug in a project-specific `inference_fn` if you need a different shape.
+        Custom `inference_fn` overrides take precedence and are NOT required to
+        follow the contract above.
         """
         if self.deployment is None:
             raise RuntimeError("Predictor is not loaded. Call fit(...) or load(...).")
