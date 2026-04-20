@@ -73,6 +73,10 @@ assembler:
 research_phase:
   enabled: true
   max_iterations: 2
+  ablation_enabled: true
+  ablation_n_candidates: 3
+  ablation_proxy_time_budget_sec: 120
+  ablation_proxy_exec_timeout_sec: 150
   n_candidates: 3
   proxy_time_budget_sec: 300
   # Allow a bit more than proxy budget so the script can soft-stop and exit cleanly.
