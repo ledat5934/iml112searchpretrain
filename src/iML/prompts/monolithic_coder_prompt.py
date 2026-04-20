@@ -45,6 +45,17 @@ There will be NO subsequent assembly step, so your script must be production-rea
 8. Limit comments. Do NOT create dummy data. Use only the provided paths.
 9. Print a concise validation metric before writing the submission.
 10. Submission must match the sample submission schema (column order/count).
+11. Before exiting successfully, print exactly one diagnostics JSON object between:
+    - `===DIAGNOSIS_SUMMARY_START===`
+    - `===DIAGNOSIS_SUMMARY_END===`
+12. The diagnostics JSON must include at least:
+    - `success`
+    - `validation_metric` with `name`, `value`, `higher_is_better`
+    - `train_metric` with `name`, `value`, `higher_is_better`
+    - `generalization_gap`
+    - `fit_status` (`underfit`/`overfit`/`balanced`/`unknown`)
+    - `suspected_bottlenecks`
+    - `notes`
 
 ## OUTPUT FORMAT
 Return ONLY the final Python script (no explanations, no markdown).

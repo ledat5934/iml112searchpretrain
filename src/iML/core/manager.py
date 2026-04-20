@@ -209,6 +209,7 @@ class Manager:
             if isinstance(research_cfg, dict):
                 phase_cfg.enabled = bool(research_cfg.get("enabled", phase_cfg.enabled))
                 phase_cfg.max_iterations = int(research_cfg.get("max_iterations", phase_cfg.max_iterations))
+                phase_cfg.diagnosis_enabled = bool(research_cfg.get("diagnosis_enabled", phase_cfg.diagnosis_enabled))
                 phase_cfg.ablation_enabled = bool(research_cfg.get("ablation_enabled", phase_cfg.ablation_enabled))
                 phase_cfg.ablation_n_candidates = int(research_cfg.get("ablation_n_candidates", phase_cfg.ablation_n_candidates))
                 phase_cfg.ablation_proxy_time_budget_sec = int(research_cfg.get("ablation_proxy_time_budget_sec", phase_cfg.ablation_proxy_time_budget_sec))
@@ -222,6 +223,7 @@ class Manager:
                 # attribute-style config object
                 phase_cfg.enabled = bool(getattr(research_cfg, "enabled", phase_cfg.enabled))
                 phase_cfg.max_iterations = int(getattr(research_cfg, "max_iterations", phase_cfg.max_iterations))
+                phase_cfg.diagnosis_enabled = bool(getattr(research_cfg, "diagnosis_enabled", phase_cfg.diagnosis_enabled))
                 phase_cfg.ablation_enabled = bool(getattr(research_cfg, "ablation_enabled", phase_cfg.ablation_enabled))
                 phase_cfg.ablation_n_candidates = int(getattr(research_cfg, "ablation_n_candidates", phase_cfg.ablation_n_candidates))
                 phase_cfg.ablation_proxy_time_budget_sec = int(getattr(research_cfg, "ablation_proxy_time_budget_sec", phase_cfg.ablation_proxy_time_budget_sec))

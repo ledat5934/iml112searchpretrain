@@ -54,6 +54,23 @@ Guidance:
 - Prefer a validation metric aligned with the task if available (e.g., logloss/AUC/RMSE).
 - If you cannot compute validation metric within time budget, set proxy_metric.value=null and provide fallback_train_loss if available.
 
+## DIAGNOSIS OUTPUT (ALSO REQUIRED)
+At the end of the run, print exactly one JSON object between these markers:
+- Print a line: ===DIAGNOSIS_SUMMARY_START===
+- Print the JSON object (valid JSON)
+- Print a line: ===DIAGNOSIS_SUMMARY_END===
+
+The diagnosis JSON must be small and include at least:
+{{
+  "success": bool,
+  "validation_metric": {{"name": str, "value": number|null, "higher_is_better": bool|null}},
+  "train_metric": {{"name": str, "value": number|null, "higher_is_better": bool|null}},
+  "generalization_gap": number|null,
+  "fit_status": "underfit" | "overfit" | "balanced" | "unknown",
+  "suspected_bottlenecks": [str],
+  "notes": [str]
+}}
+
 ## PROPOSAL TO IMPLEMENT
 ```json
 {proposal_json}

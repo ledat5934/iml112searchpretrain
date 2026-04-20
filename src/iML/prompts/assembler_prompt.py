@@ -33,6 +33,18 @@ Your task is to ensure the script is clean, robust, and correct.
     - After writing, verify `submission.csv` is not empty (has at least 1 data row, not just header).
     - If a `sample_submission.csv` exists in the dataset paths, validate that the produced submission has the same columns/order.
     - If any submission validation fails, treat it as a failure: print an error to stderr and `sys.exit(1)`.
+6.  **Diagnostics JSON (MUST PRINT)**:
+    - Before exiting successfully, print exactly one JSON object between these markers:
+      - `===DIAGNOSIS_SUMMARY_START===`
+      - `===DIAGNOSIS_SUMMARY_END===`
+    - The JSON must be valid and small, and include at least:
+      - `success`: bool
+      - `validation_metric`: object with `name`, `value`, `higher_is_better` (use nulls if unavailable)
+      - `train_metric`: object with `name`, `value`, `higher_is_better` (use nulls if unavailable)
+      - `generalization_gap`: number or null
+      - `fit_status`: one of `underfit`, `overfit`, `balanced`, `unknown`
+      - `suspected_bottlenecks`: short list of strings
+      - `notes`: short list of strings
 6.  **Clarity**: Ensure the final script is clean and well-structured.
 7.  **Sample Submission File**: Sample submission file given is for template reference (Columns) only. You have to use the test data or test file to generate predictions and your right submission file. In some cases, you must browse the test image folder to get the IDs and data.
 8.  **Do not add any other code.**

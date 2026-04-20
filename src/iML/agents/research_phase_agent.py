@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 class ResearchPhaseConfig:
     enabled: bool = False
     max_iterations: int = 2
+    diagnosis_enabled: bool = True
     ablation_enabled: bool = True
     ablation_n_candidates: int = 3
     ablation_proxy_time_budget_sec: int = 120
@@ -35,6 +36,9 @@ class ResearchPhaseAgent(BaseAgent):
     then run full eval for top-1. The winning full-run candidate can replace
     the incumbent baseline and seed the next research iteration.
     """
+
+    DIAGNOSIS_START = "===DIAGNOSIS_SUMMARY_START==="
+    DIAGNOSIS_END = "===DIAGNOSIS_SUMMARY_END==="
 
     def __init__(self, config, manager, llm_config, phase_cfg: Optional[ResearchPhaseConfig] = None):
         super().__init__(config=config, manager=manager)
@@ -72,6 +76,31 @@ class ResearchPhaseAgent(BaseAgent):
             return json.loads(chunk)
         except Exception as e:
             return {"success": False, "error": f"invalid_proxy_json: {e}", "raw": chunk[:4000]}
+
+    def _parse_diagnosis_json(self, stdout: str) -> Dict[str, Any]:
+        chunk = self._extract_between(stdout or "", self.DIAGNOSIS_START, self.DIAGNOSIS_END)
+        if not chunk:
+            return {"success": False, "error": "missing_diagnosis_markers", "stdout_head": (stdout or "")[:2000]}
+        try:
+            return json.loads(chunk)
+        except Exception as e:
+            return {"success": False, "error": f"invalid_diagnosis_json: {e}", "raw": chunk[:4000]}
+
+    def _build_diagnosis_summary(self, stdout: str) -> Dict[str, Any]:
+        diagnosis = self._parse_diagnosis_json(stdout)
+        validation_metric = diagnosis.get("validation_metric") if isinstance(diagnosis, dict) else None
+        train_metric = diagnosis.get("train_metric") if isinstance(diagnosis, dict) else None
+        fit_status = diagnosis.get("fit_status", "unknown") if isinstance(diagnosis, dict) else "unknown"
+        bottlenecks = diagnosis.get("suspected_bottlenecks", []) if isinstance(diagnosis, dict) else []
+        return {
+            "source": "baseline_stdout_diagnostics",
+            "available": bool(isinstance(diagnosis, dict) and diagnosis.get("error") is None),
+            "diagnosis": diagnosis,
+            "headline_metric": validation_metric,
+            "train_metric": train_metric,
+            "fit_status": fit_status,
+            "suspected_bottlenecks": bottlenecks if isinstance(bottlenecks, list) else [],
+        }
 
     def _score_proxy(self, proxy: Dict[str, Any]) -> Tuple[float, str]:
         """
@@ -419,6 +448,11 @@ class ResearchPhaseAgent(BaseAgent):
         previous_directions: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
         cfg = self.phase_cfg
+        diagnosis_summary = self._build_diagnosis_summary(baseline_stdout or "")
+        self.manager.save_and_log_states(
+            json.dumps(diagnosis_summary, ensure_ascii=False, indent=2),
+            f"{run_root}/diagnosis_summary.json",
+        )
         ablation_summary = self._run_ablation_study(
             run_root=run_root,
             baseline_code=baseline_code,
@@ -437,6 +471,7 @@ class ResearchPhaseAgent(BaseAgent):
                 iteration_type=iteration_type,
                 previous_directions=previous_directions or [],
                 ablation_summary=ablation_summary,
+                diagnosis_summary=diagnosis_summary,
             )
             self.manager.save_and_log_states(proposal_prompt, f"{run_root}/proposals_prompt.txt")
             proposal_resp = self.llm.assistant_chat(proposal_prompt)
@@ -520,6 +555,7 @@ class ResearchPhaseAgent(BaseAgent):
         )
 
         result: Dict[str, Any] = {
+            "diagnosis_summary": diagnosis_summary,
             "ablation_summary": ablation_summary,
             "proposal_payload": proposal_payload,
             "leaderboard": leaderboard,

@@ -73,6 +73,7 @@ assembler:
 research_phase:
   enabled: true
   max_iterations: 2
+  diagnosis_enabled: true
   ablation_enabled: true
   ablation_n_candidates: 3
   ablation_proxy_time_budget_sec: 120
