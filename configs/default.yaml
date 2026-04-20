@@ -72,7 +72,7 @@ assembler:
 # - top-1 is rerun in full mode
 research_phase:
   enabled: true
-  max_iterations: 2
+  max_iterations: 1
   diagnosis_enabled: true
   ablation_enabled: true
   ablation_n_candidates: 3
