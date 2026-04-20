@@ -31,7 +31,7 @@ def run_with_adk_retry(
     fn: Callable[[], T],
     *,
     operation_name: str,
-    max_attempts: int = 4,
+    max_attempts: int = 8,
     base_delay_sec: float = 8.0,
 ) -> T:
     last_exc: Exception | None = None
