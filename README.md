@@ -40,7 +40,7 @@ The project's architecture is predicated upon a system of intelligent **agents**
 ### System Prerequisites
 
 * An installation of Python, version 3.11 or higher.
-* All requisite dependencies installed via: `pip install -r requirements.txt`
+* `uv` installed for environment and dependency management.
 * **API Key Configuration** (see below)
 
 ### API Key Configuration
@@ -58,7 +58,8 @@ export OPENAI_API_KEY="your_openai_api_key_here"
 ```
 
 ```bash
-python run.py -i <path_to_data_folder> -c <path_to_config_file> -o <path_to_output_folder>
+uv sync --extra ml
+uv run python run.py -i <path_to_data_folder> -c <path_to_config_file> -o <path_to_output_folder>
 ```
 
 ### Command-Line Arguments
@@ -88,16 +89,20 @@ python run.py -i <path_to_data_folder> -c <path_to_config_file> -o <path_to_outp
 # Step 1: Set up API key
 export GEMINI_API_KEY="your_actual_api_key_here"
 
-# Step 2: Run the AutoML pipeline (single solution)
-python run.py -i ./datasets/steel_plate_defect -c configs/default.yaml
+# Step 2: Install dependencies
+uv sync --extra ml
 
-# Step 3: Run Multi-Iteration AutoML (3 different approaches)
-python run.py --checkpoint-mode multi-iteration -i ./datasets/steel_plate_defect
+# Step 3: Run the AutoML pipeline (single solution)
+uv run python run.py -i ./datasets/steel_plate_defect -c configs/default.yaml
+
+# Step 4: Run Multi-Iteration AutoML (3 different approaches)
+uv run python run.py --checkpoint-mode multi-iteration -i ./datasets/steel_plate_defect
 
 # Alternative: Use different LLM provider
 # For OpenAI:
 export OPENAI_API_KEY="your_openai_key_here"
-python run.py -i ./datasets/steel_plate_defect -c configs/openai_config.yaml
+uv sync --extra openai --extra ml
+uv run python run.py -i ./datasets/steel_plate_defect -c configs/default.yaml
 ```
 
 The execution of the aforementioned commands will initiate the AutoML pipeline for the dataset situated at `./datasets/steel_plate_defect`. All resulting artifacts will be stored in a newly created directory within the `runs/` folder.
@@ -125,29 +130,29 @@ The **Multi-Iteration AutoML** mode is an advanced feature that automatically ge
 **Option 1: Simplified Script (Recommended)**
 ```bash
 # Check if everything is set up correctly
-python check_setup.py
+uv run python check_setup.py
 
 # Run all 3 iterations and get the best solution automatically
-python run_multi_iteration.py -i ./your_dataset
+uv run python run_multi_iteration.py -i ./your_dataset
 
 # Run only a specific iteration type
-python run_multi_iteration.py -i ./your_dataset --single traditional
-python run_multi_iteration.py -i ./your_dataset --single custom_nn_search
-python run_multi_iteration.py -i ./your_dataset --single pretrained
+uv run python run_multi_iteration.py -i ./your_dataset --single traditional
+uv run python run_multi_iteration.py -i ./your_dataset --single custom_nn_search
+uv run python run_multi_iteration.py -i ./your_dataset --single pretrained
 ```
 
 **Option 2: Full Control Script**
 ```bash
 # Run all 3 iterations using main script
-python run.py --checkpoint-mode multi-iteration -i ./your_dataset
+uv run python run.py --checkpoint-mode multi-iteration -i ./your_dataset
 
 # Run single iteration approaches
-python run.py --single-iteration traditional -i ./your_dataset
-python run.py --single-iteration custom_nn_search -i ./your_dataset  
-python run.py --single-iteration pretrained -i ./your_dataset
+uv run python run.py --single-iteration traditional -i ./your_dataset
+uv run python run.py --single-iteration custom_nn_search -i ./your_dataset  
+uv run python run.py --single-iteration pretrained -i ./your_dataset
 
 # Or test custom_nn without architecture search
-python run.py --single-iteration custom_nn -i ./your_dataset
+uv run python run.py --single-iteration custom_nn -i ./your_dataset
 ```
 
 #### Output Structure:
@@ -246,7 +251,7 @@ The resultant directory structure, formatted as `runs/run_<timestamp>_<uuid>/`, 
    ```
    ImportError: No module named 'langchain_google_genai'
    ```
-   **Solution**: Install all dependencies: `pip install -r requirements.txt`
+   **Solution**: Install dependencies with `uv sync --extra ml` (and add provider extras if needed).
 
 ### Getting API Keys
 
