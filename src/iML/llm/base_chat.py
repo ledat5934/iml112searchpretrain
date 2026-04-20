@@ -246,6 +246,32 @@ class BaseAssistantChat(BaseModel):
         assert response is not None
         return response
 
+    def _normalize_message_content(self, content: Any) -> str:
+        if isinstance(content, str):
+            return content
+        if content is None:
+            return ""
+        if isinstance(content, list):
+            parts: List[str] = []
+            for item in content:
+                if isinstance(item, str):
+                    parts.append(item)
+                elif isinstance(item, dict):
+                    text = item.get("text")
+                    if text is not None:
+                        parts.append(str(text))
+                else:
+                    text = getattr(item, "text", None)
+                    if text is not None:
+                        parts.append(str(text))
+                    else:
+                        parts.append(str(item))
+            return "\n".join([p for p in parts if p is not None]).strip()
+        text = getattr(content, "text", None)
+        if text is not None:
+            return str(text)
+        return str(content)
+
     def assistant_chat(self, message: str, max_lines: int = 1000) -> str:
         """Send a message and get response using LangGraph."""
         if not self.app:
@@ -266,6 +292,7 @@ class BaseAssistantChat(BaseModel):
                 raise
 
         ai_message = response["messages"][-1]
+        normalized_content = self._normalize_message_content(ai_message.content)
         input_tokens = output_tokens = 0
 
         if hasattr(ai_message, "usage_metadata"):
@@ -281,13 +308,13 @@ class BaseAssistantChat(BaseModel):
         self.history_.append(
             {
                 "input": message,
-                "output": ai_message.content,
+                "output": normalized_content,
                 "input_tokens": input_tokens,
                 "output_tokens": output_tokens,
             }
         )
 
-        return ai_message.content
+        return normalized_content
 
     async def astream(self, message: str):
         """Stream responses using LangGraph."""
