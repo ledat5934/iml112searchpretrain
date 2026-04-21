@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import shutil
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -18,10 +19,6 @@ class ResearchPhaseConfig:
     enabled: bool = False
     max_iterations: int = 2
     diagnosis_enabled: bool = True
-    ablation_enabled: bool = True
-    ablation_n_candidates: int = 3
-    ablation_proxy_time_budget_sec: int = 120
-    ablation_proxy_exec_timeout_sec: int = 150
     n_candidates: int = 3
     proxy_time_budget_sec: int = 300
     proxy_exec_timeout_sec: int = 330  # give code time to soft-stop and wrap up
@@ -135,151 +132,6 @@ class ResearchPhaseAgent(BaseAgent):
         elif "```" in cleaned:
             cleaned = cleaned.split("```", 1)[1].split("```", 1)[0].strip()
         return json.loads(cleaned)
-
-    def _build_ablation_prompt(
-        self,
-        *,
-        description_analysis: Optional[Dict[str, Any]] = None,
-        profiling_summary: Optional[Dict[str, Any]] = None,
-        baseline_code: str,
-        baseline_stdout: str = "",
-        iteration_type: str | None = None,
-    ) -> str:
-        cfg = self.phase_cfg
-        return (
-            "You are planning a low-cost ML ablation study.\n\n"
-            "Goal: decide which subsystem should be improved first before proposing bigger improvements.\n"
-            f"Propose exactly {int(cfg.ablation_n_candidates)} materially different ablation directions.\n\n"
-            f"ITERATION_TYPE: {iteration_type or 'default'}\n\n"
-            "DESCRIPTION_ANALYSIS:\n"
-            f"{json.dumps(description_analysis or {}, indent=2, ensure_ascii=False)}\n\n"
-            "PROFILING_SUMMARY:\n"
-            f"{json.dumps(profiling_summary or {}, indent=2, ensure_ascii=False)}\n\n"
-            "BASELINE_STDOUT_EXCERPT:\n"
-            f"{(baseline_stdout or '')[-4000:]}\n\n"
-            "BASELINE_CODE:\n"
-            f"{baseline_code or ''}\n\n"
-            "Rules:\n"
-            "- Each ablation must isolate one subsystem or decision area.\n"
-            "- Prefer low-cost changes that can be judged with a short proxy run.\n"
-            "- Focus on areas like optimizer/schedule, regularization, architecture width/depth, feature handling, loss/objective, data augmentation, or validation setup.\n"
-            "- Do not propose broad rewrites.\n"
-            "- The proposed directions must be materially different from each other.\n\n"
-            "Return valid JSON only with this schema:\n"
-            "{\n"
-            '  "study_goal": "short string",\n'
-            '  "ablations": [\n'
-            "    {\n"
-            '      "proposal_id": "ablation_1",\n'
-            '      "area": "short subsystem name",\n'
-            '      "title": "short title",\n'
-            '      "objective": "what to test",\n'
-            '      "rationale": "why this area is worth testing first",\n'
-            '      "changes": ["specific low-cost change 1", "specific low-cost change 2"],\n'
-            '      "expected_metric": "metric name",\n'
-            '      "risk_level": "low/medium/high"\n'
-            "    }\n"
-            "  ]\n"
-            "}\n"
-        )
-
-    def _run_ablation_study(
-        self,
-        *,
-        run_root: str,
-        baseline_code: str,
-        description_analysis: Optional[Dict[str, Any]] = None,
-        profiling_summary: Optional[Dict[str, Any]] = None,
-        baseline_stdout: str = "",
-        iteration_type: str | None = None,
-    ) -> Dict[str, Any]:
-        cfg = self.phase_cfg
-        if not cfg.ablation_enabled:
-            return {"skipped": True, "reason": "ablation_disabled"}
-
-        try:
-            prompt = self._build_ablation_prompt(
-                description_analysis=description_analysis,
-                profiling_summary=profiling_summary,
-                baseline_code=baseline_code,
-                baseline_stdout=baseline_stdout,
-                iteration_type=iteration_type,
-            )
-            self.manager.save_and_log_states(prompt, f"{run_root}/ablation/plan_prompt.txt")
-            response = self.llm.assistant_chat(prompt)
-            self.manager.save_and_log_states(response, f"{run_root}/ablation/plan_raw_response.txt")
-            plan_payload = self._parse_json_response(response)
-        except Exception as e:
-            return {"skipped": False, "error": f"ablation_plan_failed: {e}"}
-
-        leaderboard: List[Dict[str, Any]] = []
-        best_row: Dict[str, Any] | None = None
-        best_score = float("-inf")
-        ablations = (plan_payload or {}).get("ablations", []) or []
-
-        for idx, proposal in enumerate(ablations[: int(cfg.ablation_n_candidates)], start=1):
-            proposal_id = proposal.get("proposal_id") or f"ablation_{idx}"
-            mutate_prompt = self.prompt_handler.build(
-                baseline_code=baseline_code,
-                proxy_time_budget_sec=int(cfg.ablation_proxy_time_budget_sec),
-                mode="mutate_from_proposal",
-                proposal=proposal,
-                description_analysis=description_analysis or {},
-                profiling_summary=profiling_summary or {},
-                stdout_excerpt=baseline_stdout or "",
-                iteration_type=iteration_type,
-            )
-            self.manager.save_and_log_states(mutate_prompt, f"{run_root}/ablation/{proposal_id}/prompt.txt")
-            mutate_response = self.llm.assistant_chat(mutate_prompt)
-            self.manager.save_and_log_states(mutate_response, f"{run_root}/ablation/{proposal_id}/raw_response.txt")
-            mutated_code = self.prompt_handler.parse(mutate_response)
-            self.manager.save_and_log_states(mutated_code, f"{run_root}/ablation/{proposal_id}/mutated_code.py")
-
-            proxy_phase_name = f"{run_root}/ablation/{proposal_id}/proxy"
-            proxy_task_description = self.manager.build_debug_context(
-                stderr="",
-                code=mutated_code,
-                phase_name=proxy_phase_name,
-                attempt=1,
-            )
-            exec_result, final_code, debug_meta = self._run_with_optional_debug(
-                code=mutated_code,
-                phase_name=proxy_phase_name,
-                attempt=1,
-                task_description=proxy_task_description,
-                timeout_sec=int(cfg.ablation_proxy_exec_timeout_sec),
-                termination_grace_sec=int(cfg.termination_grace_sec),
-            )
-            self.manager.save_and_log_states(final_code, f"{run_root}/ablation/{proposal_id}/final_code.py")
-            proxy = self._parse_proxy_json(exec_result.get("stdout", "") or "")
-            score, reason = self._score_proxy(proxy)
-
-            row = {
-                "candidate": proposal_id,
-                "proposal": proposal,
-                "exec_success": bool(exec_result.get("success")),
-                "used_debug_agent": bool(debug_meta.get("used")),
-                "debug_ok": bool(debug_meta.get("ok")),
-                "proxy": proxy,
-                "score": score,
-                "score_reason": reason,
-            }
-            leaderboard.append(row)
-            if score > best_score:
-                best_score = score
-                best_row = row
-
-        result = {
-            "plan_payload": plan_payload,
-            "leaderboard": leaderboard,
-            "recommended_focus": best_row.get("proposal") if best_row else None,
-            "best_candidate": best_row.get("candidate") if best_row else None,
-        }
-        self.manager.save_and_log_states(
-            json.dumps(result, ensure_ascii=False, indent=2),
-            f"{run_root}/ablation/ablation_result.json",
-        )
-        return result
 
     def _run_with_optional_debug(
         self,
@@ -454,14 +306,6 @@ class ResearchPhaseAgent(BaseAgent):
             json.dumps(diagnosis_summary, ensure_ascii=False, indent=2),
             f"{run_root}/diagnosis_summary.json",
         )
-        ablation_summary = self._run_ablation_study(
-            run_root=run_root,
-            baseline_code=baseline_code,
-            description_analysis=description_analysis,
-            profiling_summary=profiling_summary,
-            baseline_stdout=baseline_stdout,
-            iteration_type=iteration_type,
-        )
         try:
             proposal_prompt = self.proposal_prompt.build(
                 description_analysis=description_analysis or {},
@@ -471,7 +315,6 @@ class ResearchPhaseAgent(BaseAgent):
                 n_candidates=int(cfg.n_candidates),
                 iteration_type=iteration_type,
                 previous_directions=previous_directions or [],
-                ablation_summary=ablation_summary,
                 diagnosis_summary=diagnosis_summary,
             )
             self.manager.save_and_log_states(proposal_prompt, f"{run_root}/proposals_prompt.txt")
@@ -557,7 +400,6 @@ class ResearchPhaseAgent(BaseAgent):
 
         result: Dict[str, Any] = {
             "diagnosis_summary": diagnosis_summary,
-            "ablation_summary": ablation_summary,
             "proposal_payload": proposal_payload,
             "leaderboard": leaderboard,
             "best_candidate": best_id,
@@ -598,6 +440,16 @@ class ResearchPhaseAgent(BaseAgent):
                 require_submission=True,
                 submission_filename="submission.csv",
             )
+            saved_submission_path = None
+            saved_submission_candidate_path = None
+            live_submission_path = os.path.join(self.manager.output_folder, "submission.csv")
+            if isinstance(full_exec, dict) and full_exec.get("success") and os.path.exists(live_submission_path):
+                research_iter_dir = os.path.join(self.manager.output_folder, "research", f"iter_{run_root.split('_')[-1]}")
+                os.makedirs(research_iter_dir, exist_ok=True)
+                saved_submission_path = os.path.join(research_iter_dir, "submission.csv")
+                saved_submission_candidate_path = os.path.join(research_iter_dir, f"submission_{best_id}.csv")
+                shutil.copy2(live_submission_path, saved_submission_path)
+                shutil.copy2(live_submission_path, saved_submission_candidate_path)
             result["full"] = {
                 "candidate": best_id,
                 "proposal": winning_proposal,
@@ -607,6 +459,8 @@ class ResearchPhaseAgent(BaseAgent):
                 "exec": full_exec,
                 "used_debug_agent": bool(full_debug_meta.get("used")),
                 "debug_ok": bool(full_debug_meta.get("ok")),
+                "saved_submission_path": saved_submission_path,
+                "saved_submission_candidate_path": saved_submission_candidate_path,
             }
             self.manager.save_and_log_states(
                 json.dumps(result.get("full", {}), ensure_ascii=False, indent=2),
