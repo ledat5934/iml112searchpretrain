@@ -76,8 +76,8 @@ research_phase:
   diagnosis_enabled: true
   ablation_enabled: true
   ablation_n_candidates: 3
-  ablation_proxy_time_budget_sec: 120
-  ablation_proxy_exec_timeout_sec: 150
+  ablation_proxy_time_budget_sec: 1200
+  ablation_proxy_exec_timeout_sec: 1500
   n_candidates: 3
   proxy_time_budget_sec: 300
   # Allow a bit more than proxy budget so the script can soft-stop and exit cleanly.
