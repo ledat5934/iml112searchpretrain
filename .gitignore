@@ -4,3 +4,6 @@ runs
 venv/
 runs/
 command.txt
+.venv
+.omx
+

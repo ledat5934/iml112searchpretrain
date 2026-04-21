@@ -2,6 +2,7 @@
 """
 Setup validation script for iML AutoML Framework
 Checks if the environment is properly configured for running multi-iteration AutoML.
+This script reflects the uv-managed dependency groups in pyproject.toml.
 """
 import os
 import sys
@@ -11,36 +12,67 @@ import importlib
 def check_python_version():
     """Check if Python version is compatible."""
     version = sys.version_info
-    if version.major < 3 or (version.major == 3 and version.minor < 8):
-        return False, f"Python {version.major}.{version.minor} (requires Python 3.8+)"
+    if version.major < 3 or (version.major == 3 and version.minor < 11):
+        return False, f"Python {version.major}.{version.minor} (requires Python 3.11+)"
     return True, f"Python {version.major}.{version.minor}.{version.micro}"
 
 def check_dependencies():
-    """Check if required dependencies are installed."""
-    required_packages = [
-        'pandas',
-        'numpy', 
-        'scikit-learn',
-        'torch',
-        'transformers',
-        'xgboost',
-        'lightgbm',
-        'catboost',
-        'langchain',
-        'omegaconf',
-        'ydata_profiling',
-        'rich'
-    ]
-    
+    """Check uv-managed dependency groups."""
+    dependency_groups = {
+        "core": [
+            ("python-dotenv", "dotenv"),
+            ("omegaconf", "omegaconf"),
+            ("pandas", "pandas"),
+            ("rich", "rich"),
+            ("tqdm", "tqdm"),
+            ("pydantic", "pydantic"),
+            ("tenacity", "tenacity"),
+            ("langchain", "langchain"),
+            ("langchain-community", "langchain_community"),
+            ("langchain-core", "langchain_core"),
+            ("langgraph", "langgraph"),
+            ("ydata-profiling", "ydata_profiling"),
+            ("google-adk", "google.adk"),
+            ("google-genai", "google.genai"),
+            ("google-generativeai", "google.generativeai"),
+            ("langchain-google-genai", "langchain_google_genai"),
+        ],
+        "ml": [
+            ("numpy", "numpy"),
+            ("scipy", "scipy"),
+            ("scikit-learn", "sklearn"),
+            ("xgboost", "xgboost"),
+            ("lightgbm", "lightgbm"),
+            ("catboost", "catboost"),
+            ("torch", "torch"),
+            ("torchvision", "torchvision"),
+            ("transformers", "transformers"),
+            ("datasets", "datasets"),
+            ("accelerate", "accelerate"),
+            ("sentence-transformers", "sentence_transformers"),
+        ],
+        "provider-extras": [
+            ("openai", "openai"),
+            ("langchain-openai", "langchain_openai"),
+            ("anthropic", "anthropic"),
+            ("langchain-anthropic", "langchain_anthropic"),
+            ("boto3", "boto3"),
+            ("langchain-aws", "langchain_aws"),
+        ],
+    }
+
     results = {}
-    for package in required_packages:
-        try:
-            module = importlib.import_module(package.replace('-', '_'))
-            version = getattr(module, '__version__', 'unknown')
-            results[package] = (True, version)
-        except ImportError:
-            results[package] = (False, "Not installed")
-    
+    for group_name, packages in dependency_groups.items():
+        group_results = {}
+        for package_name, module_name in packages:
+            try:
+                module = importlib.import_module(module_name)
+                version = getattr(module, "__version__", "unknown")
+                group_results[package_name] = (True, version)
+            except ImportError:
+                group_results[package_name] = (False, "Not installed")
+        results[group_name] = group_results
+
     return results
 
 def check_api_keys():
@@ -73,7 +105,7 @@ def check_file_structure():
         'src/iML/prompts',
         'src/iML/llm',
         'configs/default.yaml',
-        'requirements.txt'
+        'pyproject.toml'
     ]
     
     results = {}
@@ -97,12 +129,19 @@ def main():
     # Check dependencies
     print("\n📦 Dependencies:")
     deps = check_dependencies()
-    all_deps_ok = True
-    for package, (installed, version) in deps.items():
-        status = "✅" if installed else "❌"
-        print(f"  {status} {package:<20} {version}")
-        if not installed:
-            all_deps_ok = False
+    core_deps_ok = True
+    for group_name, group_deps in deps.items():
+        print(f"  [{group_name}]")
+        group_ok = True
+        for package, (installed, version) in group_deps.items():
+            status = "✅" if installed else "❌"
+            print(f"    {status} {package:<24} {version}")
+            if group_name == "core" and not installed:
+                core_deps_ok = False
+            if group_name != "core" and not installed:
+                group_ok = False
+        if group_name != "core" and not group_ok:
+            print("    ℹ Optional group is incomplete. Install only if you need that capability.")
     
     # Check API keys
     print("\n🔑 API Keys:")
@@ -130,7 +169,7 @@ def main():
     
     checks = [
         ("Python Version", py_ok),
-        ("Dependencies", all_deps_ok),
+        ("Core Dependencies", core_deps_ok),
         ("API Keys", any_key_set),
         ("File Structure", all_files_ok)
     ]
@@ -145,13 +184,16 @@ def main():
     if all_good:
         print("\n🎉 Setup Complete! You're ready to run iML AutoML.")
         print("\nQuick start:")
-        print("  python run_multi_iteration.py -i ./your_dataset")
+        print("  uv sync --extra ml")
+        print("  uv run python run_multi_iteration.py -i ./your_dataset")
     else:
         print("\n⚠️  Setup Issues Found:")
         if not py_ok:
-            print("  • Upgrade to Python 3.8 or higher")
-        if not all_deps_ok:
-            print("  • Install missing dependencies: pip install -r requirements.txt")
+            print("  • Upgrade to Python 3.11 or higher")
+        if not core_deps_ok:
+            print("  • Install core dependencies: uv sync")
+            print("  • For generated ML training/inference code: uv sync --extra ml")
+            print("  • For additional LLM providers: uv sync --extra openai --extra anthropic --extra bedrock")
         if not any_key_set:
             print("  • Set up at least one API key (GEMINI_API_KEY recommended)")
         if not all_files_ok:

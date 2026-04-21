@@ -1,12 +1,12 @@
 import json
 import logging
+import os
 import re
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
 
 import pandas as pd
 from tqdm import tqdm
-from ydata_profiling import ProfileReport
 
 from .base_agent import BaseAgent
 from .profiling_llm_agent import ProfilingLLMAgent
@@ -19,6 +19,22 @@ from ..utils.basic_file_profiler import (
 
 # Configure logger
 logger = logging.getLogger(__name__)
+
+
+def _load_profile_report():
+    """
+    Import ydata_profiling lazily so the application can still start in
+    headless environments and recover gracefully if optional plotting
+    dependencies are fragile.
+    """
+    # Kaggle/Jupyter often pre-populate MPLBACKEND with an inline backend that
+    # is unavailable inside isolated uv environments. Agg is safe for headless
+    # report generation and avoids import-time crashes in matplotlib.
+    os.environ.setdefault("MPLBACKEND", "Agg")
+
+    from ydata_profiling import ProfileReport
+
+    return ProfileReport
 
 class ProfilingAgent(BaseAgent):
     """
@@ -239,7 +255,8 @@ class ProfilingAgent(BaseAgent):
         try:
             df = pd.read_csv(csv_path)
             logger.info(f"Analyzing {csv_path.name} ({df.shape[0]} rows, {df.shape[1]} columns)")
-            
+
+            ProfileReport = _load_profile_report()
             profile = ProfileReport(
                 df,
                 title=f"Profile - {csv_path.name}",

@@ -46,7 +46,7 @@ python run_checkpoint.py -i ./path/to/your/data --resume-from-guideline -o ./run
 python run_checkpoint.py -i ./path/to/your/data --stop-at-guideline
 
 # Hoặc sử dụng script gốc
-python run.py -i ./path/to/your/data --checkpoint-mode partial --checkpoint-action guideline
+uv run python run.py -i ./path/to/your/data --checkpoint-mode partial --checkpoint-action guideline
 ```
 
 ### 2. Chỉnh sửa guideline thủ công
@@ -70,7 +70,7 @@ You can now manually edit the guideline in the states folder.
 python run_checkpoint.py -i ./path/to/your/data --resume-from-preprocessing -o ./runs/run_20240101_120000_abcd1234
 
 # Hoặc sử dụng script gốc  
-python run.py -i ./path/to/your/data --checkpoint-mode resume --checkpoint-action preprocessing -o ./runs/run_20240101_120000_abcd1234
+uv run python run.py -i ./path/to/your/data --checkpoint-mode resume --checkpoint-action preprocessing -o ./runs/run_20240101_120000_abcd1234
 ```
 
 ## Các điểm dừng khả dụng
@@ -145,7 +145,7 @@ python run_checkpoint.py -i ./data --resume-from-assembler -o ./existing_run
 ```bash
 python run_checkpoint.py -i ./data --full
 # Hoặc đơn giản:
-python run.py -i ./data
+uv run python run.py -i ./data
 ```
 
 ## Files quan trọng
@@ -167,7 +167,7 @@ python run.py -i ./data
 1. **Đường dẫn output**: Khi resume, bạn PHẢI chỉ định đường dẫn chính xác đến thư mục run đã tồn tại
 2. **Backup**: Nên backup file guideline gốc trước khi chỉnh sửa
 3. **Format JSON**: Đảm bảo file JSON vẫn đúng format sau khi chỉnh sửa
-4. **Dependencies**: Đảm bảo tất cả dependencies đã được cài đặt (`pip install -r requirements.txt`)
+4. **Dependencies**: Đảm bảo các dependencies đã được cài bằng `uv sync` với các extra phù hợp.
 
 ## Troubleshooting
 
