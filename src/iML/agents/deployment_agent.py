@@ -164,10 +164,54 @@ STRICT REQUIREMENTS:
      - recommended style example:
          {{
              "model": {{"filename": "model.joblib", "role": "model"}},
-             "preprocessing_main": {{"filename": "preprocessor.joblib", "role": "preprocessing"}},
+             "preprocessor": {{"filename": "preprocessor.joblib", "role": "preprocessing"}},
              "metadata": {{"filename": "metadata.json", "role": "metadata"}}
          }}
      - Avoid loose path-only styles like `model_path` / `vectorizer_path` / `model_artifact` in new outputs.
+
+10) MANDATORY OUTPUT CONTRACT for predict():
+    The task type MUST be read from deployment/metadata.json (key: "task_type", values: "classification" | "regression").
+    If metadata.json does not specify task_type, infer it from the loaded model/artifacts and persist a sensible default.
+
+    a) Classification:
+       - Return a Python list with one dict per input sample, in input order:
+             [
+                 {{"label": <decoded_label>, "confidence": <float in [0,1]>}},
+                 ...
+             ]
+       - `label` MUST be the decoded class label (string/int matching what training used,
+         applying inverse_transform of the saved label encoder when applicable).
+       - `confidence` MUST be the probability of the predicted class:
+             * If the underlying model exposes `predict_proba`, take the row-wise max of the
+               probability matrix:
+                   probs = model.predict_proba(features)   # shape (n_samples, n_classes)
+                   confidence = float(probs[i].max())      # per-sample
+               This is equivalent to the probability of the predicted class because
+               `model.predict()` is `classes_[argmax(predict_proba(x))]`.
+             * DO NOT index probabilities by the raw predicted class value, e.g.
+               `probs[i, pred_label_encoded]`. That only works when class values happen
+               to be `0, 1, 2, ...`. It silently returns the wrong column (or raises
+               IndexError) for any other label encoding (string labels, sparse ids,
+               LabelEncoder reordering, dropped classes, etc.). Always use `.max()` or
+               `argmax`-based lookup against `model.classes_` instead.
+             * Else if it exposes `decision_function`, apply softmax (multiclass) or sigmoid
+               (binary) to the row, then take the row-wise max as confidence.
+             * Else, fall back to `confidence = 1.0` and ALSO log a clear warning to stderr.
+       - Do NOT return raw numpy arrays for classification; always wrap as the list-of-dicts above.
+
+    b) Regression:
+       - Return a Python list with one dict per input sample, in input order:
+             [
+                 {{"value": <float>}},
+                 ...
+             ]
+       - `value` MUST be a Python float (cast via `float(...)`), not numpy scalar.
+
+    c) Single-sample inputs:
+       - If `data` is a single sample (not a batch), still return a list of length 1 in the same shape.
+
+    d) Errors:
+       - On any inference failure, raise a clear exception. Do NOT return partial/empty results.
 
 Iteration type: {iteration_type or 'default'}
 Deployment directory: {deployment_dir}

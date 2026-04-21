@@ -31,7 +31,7 @@ Your task is to ensure the script is clean, robust, and correct.
                     ```json
                     {{
                         "model": {{"filename": "model.joblib", "role": "model"}},
-                        "preprocessing_main": {{"filename": "preprocessor.joblib", "role": "preprocessing"}},
+                        "preprocessor": {{"filename": "preprocessor.joblib", "role": "preprocessing"}},
                         "label_encoder": {{"filename": "label_encoder.joblib", "role": "preprocessing"}},
                         "metadata": {{"filename": "metadata.json", "role": "metadata"}}
                     }}
@@ -42,6 +42,19 @@ Your task is to ensure the script is clean, robust, and correct.
             - preprocessing artifacts (encoders/scalers/tokenizer/config/feature map) required for consistent preprocessing
             - inference configuration/metadata (feature columns, target mapping, label encoder mapping, model class, versions if available)
             - `manifest.json` listing all artifacts and how to load them.
+        - **PREDICT OUTPUT CONTRACT (downstream `deployment.py` MUST follow):**
+            - For **classification**: return `[{{"label": <decoded_label>, "confidence": <float in [0,1]>}}, ...]`
+            - For **regression**: return `[{{"value": <float>}}, ...]`
+            - To make this possible, the trained artifacts MUST support it:
+                * Save `metadata.json` with at least:
+                    - `"task_type"`: `"classification"` or `"regression"`
+                    - For classification: `"class_labels"` (list of decoded labels in model order)
+                      and persist any label encoder used during training (e.g. `label_encoder.joblib`).
+                * For classification, prefer a model that exposes `predict_proba` (e.g. RandomForest,
+                  LogisticRegression, XGBoost, LightGBM, CatBoost, or a NN with softmax head).
+                  If using a model without native probabilities (e.g. linear SVM), wrap it with
+                  `CalibratedClassifierCV` and persist the calibrated estimator so the deployment
+                  module can compute confidence without retraining.
         - The script MUST include a reusable loading path/function that can perform inference from `deployment` artifacts without calling any training routine.
         - Before writing new artifacts, clear stale deployment outputs in `{deployment_path}` (or overwrite deterministically) so old files cannot create false success.
         - After writing artifacts, MUST validate deployment integrity:

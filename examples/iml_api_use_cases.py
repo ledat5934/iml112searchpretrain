@@ -40,11 +40,32 @@ def _print_header(title: str) -> None:
 
 
 def _safe_print_predictions(preds: Any) -> None:
+    """
+    Pretty-print predictions following the IMLPredictor contract:
+      - Classification: [{"label": ..., "confidence": ...}, ...]
+      - Regression:     [{"value": ...}, ...]
+    Falls back gracefully if a custom inference_fn returns a different shape.
+    """
     print("Predictions type:", type(preds).__name__)
-    if isinstance(preds, (list, tuple)):
-        print("Predictions sample:", preds[:5])
-    else:
+    if not isinstance(preds, (list, tuple)):
         print("Predictions:", preds)
+        return
+
+    sample = list(preds)[:5]
+    if sample and all(isinstance(p, dict) for p in sample):
+        first = sample[0]
+        if "label" in first and "confidence" in first:
+            print("Detected: classification output")
+            for i, p in enumerate(sample):
+                print(f"  [{i}] label={p.get('label')!r} confidence={p.get('confidence'):.4f}")
+            return
+        if "value" in first:
+            print("Detected: regression output")
+            for i, p in enumerate(sample):
+                print(f"  [{i}] value={p.get('value')}")
+            return
+
+    print("Predictions sample:", sample)
 
 
 # -----------------------------
