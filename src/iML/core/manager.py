@@ -30,6 +30,7 @@ from ..agents import (
     ComparisonAgent,
     DebugAgent,
     PromptDeciderAgent,
+    DiagnosisPhaseAgent,
     ResearchPhaseAgent,
     ResearchPhaseConfig,
 )
@@ -202,6 +203,12 @@ class Manager:
             manager=self,
             llm_config=self.config.assembler,
         )
+        diagnosis_llm_cfg = getattr(self.config, "diagnosis_phase_llm", None) or self.config.assembler
+        self.diagnosis_phase_agent = DiagnosisPhaseAgent(
+            config=config,
+            manager=self,
+            llm_config=diagnosis_llm_cfg,
+        )
         # Optional research phase (micro-mutations + proxy ranking)
         research_cfg = getattr(self.config, "research_phase", None)
         phase_cfg = ResearchPhaseConfig()
@@ -267,6 +274,7 @@ class Manager:
         self.assembled_code = None
         self.preprocessing_code = None
         self.modeling_code = None
+        self.diagnosis_summary = None
 
     def get_prompt_fields(self, iteration_type: str | None = None) -> Dict[str, Any]:
         """
@@ -401,12 +409,30 @@ class Manager:
             if isinstance(self.latest_execution_result, dict)
             else ""
         )
+        self.diagnosis_summary = None
+        diagnosis_result = None
+        try:
+            if getattr(self.research_phase_agent.phase_cfg, "diagnosis_enabled", True):
+                diagnosis_result = self.diagnosis_phase_agent(
+                    baseline_code=baseline_code,
+                    description_analysis=getattr(self, "description_analysis", {}) or {},
+                    profiling_summary=getattr(self, "profiling_summary", {}) or {},
+                    baseline_stdout=baseline_stdout,
+                    latest_execution_result=getattr(self, "latest_execution_result", {}) or {},
+                    iteration_type=iteration_type,
+                )
+                if isinstance(diagnosis_result, dict):
+                    self.diagnosis_summary = diagnosis_result.get("diagnosis")
+        except Exception as e:
+            logger.warning(f"Diagnosis phase failed or skipped: {e}")
+
         research_out = self.research_phase_agent(
             baseline_code=baseline_code,
             description_analysis=getattr(self, "description_analysis", {}) or {},
             profiling_summary=getattr(self, "profiling_summary", {}) or {},
             baseline_stdout=baseline_stdout,
             iteration_type=iteration_type,
+            diagnosis_summary=getattr(self, "diagnosis_summary", None),
         )
         self.save_and_log_states(
             json.dumps(research_out, ensure_ascii=False, indent=2),

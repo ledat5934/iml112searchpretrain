@@ -446,9 +446,10 @@ class ResearchPhaseAgent(BaseAgent):
         baseline_stdout: str = "",
         iteration_type: str | None = None,
         previous_directions: Optional[List[Dict[str, Any]]] = None,
+        diagnosis_summary: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         cfg = self.phase_cfg
-        diagnosis_summary = self._build_diagnosis_summary(baseline_stdout or "")
+        diagnosis_summary = diagnosis_summary or self._build_diagnosis_summary(baseline_stdout or "")
         self.manager.save_and_log_states(
             json.dumps(diagnosis_summary, ensure_ascii=False, indent=2),
             f"{run_root}/diagnosis_summary.json",
@@ -624,6 +625,7 @@ class ResearchPhaseAgent(BaseAgent):
         profiling_summary: Optional[Dict[str, Any]] = None,
         baseline_stdout: str = "",
         iteration_type: str | None = None,
+        diagnosis_summary: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         cfg = self.phase_cfg
         if not cfg.enabled:
@@ -646,6 +648,7 @@ class ResearchPhaseAgent(BaseAgent):
                 baseline_stdout=current_baseline_stdout,
                 iteration_type=iteration_type,
                 previous_directions=previous_directions,
+                diagnosis_summary=diagnosis_summary if iteration_idx == 1 else None,
             )
             iter_result["iteration_index"] = iteration_idx
             iteration_results.append(iter_result)
