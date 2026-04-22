@@ -33,18 +33,7 @@ Your task is to ensure the script is clean, robust, and correct.
     - After writing, verify `submission.csv` is not empty (has at least 1 data row, not just header).
     - If a `sample_submission.csv` exists in the dataset paths, validate that the produced submission has the same columns/order.
     - If any submission validation fails, treat it as a failure: print an error to stderr and `sys.exit(1)`.
-6.  **Diagnostics JSON (MUST PRINT)**:
-    - Before exiting successfully, print exactly one JSON object between these markers:
-      - `===DIAGNOSIS_SUMMARY_START===`
-      - `===DIAGNOSIS_SUMMARY_END===`
-    - The JSON must be valid and small, and include at least:
-      - `success`: bool
-      - `validation_metric`: object with `name`, `value`, `higher_is_better` (use nulls if unavailable)
-      - `train_metric`: object with `name`, `value`, `higher_is_better` (use nulls if unavailable)
-      - `generalization_gap`: number or null
-      - `fit_status`: one of `underfit`, `overfit`, `balanced`, `unknown`
-      - `suspected_bottlenecks`: short list of strings
-      - `notes`: short list of strings
+{diagnostics_requirement}
 6.  **Clarity**: Ensure the final script is clean and well-structured.
 7.  **Sample Submission File**: Sample submission file given is for template reference (Columns) only. You have to use the test data or test file to generate predictions and your right submission file. In some cases, you must browse the test image folder to get the IDs and data.
 8.  **Do not add any other code.**
@@ -79,6 +68,21 @@ Based on the context above, generate the complete and corrected Python code. The
         """Build prompt to assemble or fix code."""
 
         retry_context = ""
+        diagnostics_requirement = ""
+        if getattr(self.manager, "is_research_phase_enabled", lambda: False)():
+            diagnostics_requirement = """6.  **Diagnostics JSON (MUST PRINT)**:
+    - Before exiting successfully, print exactly one JSON object between these markers:
+      - `===DIAGNOSIS_SUMMARY_START===`
+      - `===DIAGNOSIS_SUMMARY_END===`
+    - The JSON must be valid and small, and include at least:
+      - `success`: bool
+      - `validation_metric`: object with `name`, `value`, `higher_is_better` (use nulls if unavailable)
+      - `train_metric`: object with `name`, `value`, `higher_is_better` (use nulls if unavailable)
+      - `generalization_gap`: number or null
+      - `fit_status`: one of `underfit`, `overfit`, `balanced`, `unknown`
+      - `suspected_bottlenecks`: short list of strings
+      - `notes`: short list of strings
+"""
         if error_message:
             # Use smart truncation for error message to save tokens and focus on relevant parts
             max_lines = getattr(self.manager.config, 'max_error_lines_for_llm', 20)
@@ -121,6 +125,7 @@ The code above failed with the following error.
             original_code=original_code,
             output_path=output_path,
             retry_context=retry_context,
+            diagnostics_requirement=diagnostics_requirement,
             datafile_structure=datafile_structure or "N/A",
         )
         

@@ -324,6 +324,10 @@ class Manager:
         """Whether external web/ADK search is allowed in this run."""
         return (self.search_mode or "hybrid") != "llm_only"
 
+    def is_research_phase_enabled(self) -> bool:
+        phase_cfg = getattr(getattr(self, "research_phase_agent", None), "phase_cfg", None)
+        return bool(getattr(phase_cfg, "enabled", False))
+
     def _prepare_guideline(self, iteration_type: str = None) -> bool:
         """
         Generate or synthesize a guideline depending on the ablation variant.
