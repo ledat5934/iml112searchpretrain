@@ -6,6 +6,7 @@ from rich.progress import (
 )
 
 from ..prompts import ExecuterPrompt
+from ..utils.execution_env import build_child_execution_env
 from ..utils.rich_logging import show_progress_bar
 from .base_agent import BaseAgent
 from .utils import init_llm
@@ -43,6 +44,7 @@ def execute_code(code, language, timeout):
             stderr=subprocess.PIPE,
             text=True,
             bufsize=1,
+            env=build_child_execution_env(),
         )
 
         stdout_chunks, stderr_chunks = [], []
@@ -213,6 +215,7 @@ class ExecuterAgent(BaseAgent):
             text=True,
             bufsize=1,
             cwd=working_dir,
+            env=build_child_execution_env(),
         )
 
         stdout_chunks, stderr_chunks = [], []
