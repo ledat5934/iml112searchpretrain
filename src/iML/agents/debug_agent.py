@@ -81,7 +81,8 @@ PHASE_NAME: {phase_name}
 
 # Your task
 - Please revise the code to fix the error.
-- If the error is a 'module not found` error, then install the necessary module. You can use `pip install <module>`, where `<module>` is the name of the module to install.
+- If the error is a 'module not found` error, install the necessary module only with `subprocess.check_call(["uv", "pip", "install", "--python", sys.executable, "<module>"])`.
+- Never use bare `pip`, `python`, `python3`, `conda`, `uv add`, shell install commands, or create/activate another virtual environment.
 - Do not remove subsampling if exists.
 - For assemble/monolithic phases, preserve and enforce deployment artifact contract from Output constraint and Phase requirements.
 - Do NOT return partial code (e.g., imports only, stubs, unfinished try blocks).
@@ -720,13 +721,13 @@ PHASE_NAME: {phase_name}
         return patched
 
     def _ensure_package_import(self, code: str, package: str) -> str:
-        # Insert try/except import with pip install at top if missing
+        # Insert try/except import with uv pip install pinned to the current interpreter.
         import_block = (
             f"\nimport sys, subprocess\n"
             f"try:\n"
             f"    __import__('{package}')\n"
             f"except ModuleNotFoundError:\n"
-            f"    subprocess.check_call([sys.executable, '-m', 'pip', 'install', '{package}'])\n"
+            f"    subprocess.check_call([\"uv\", \"pip\", \"install\", \"--python\", sys.executable, \"{package}\"])\n"
             f"    __import__('{package}')\n"
         )
         # Place after shebang or at very top

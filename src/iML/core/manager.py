@@ -34,6 +34,7 @@ from ..agents import (
 )
 from ..agents.comparison_agent import IterationResultExtractor
 from ..llm import ChatLLMFactory
+from ..utils.execution_env import build_child_execution_env
 from ..utils.file_io import get_directory_structure
 
 # Basic configuration
@@ -1572,6 +1573,7 @@ class Manager:
                 text=True,
                 bufsize=1,
                 cwd=working_dir,
+                env=build_child_execution_env(),
             )
 
             stdout_chunks: list[str] = []
