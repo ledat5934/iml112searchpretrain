@@ -21,7 +21,7 @@ class DeploymentAgent(BaseAgent):
     3) Generate deployment.py exposing load()/predict()-style API without retraining.
     """
 
-    def __init__(self, config: Dict[str, Any], manager: Any, llm_config: Dict[str, Any], max_retries: int = 2):
+    def __init__(self, config: Dict[str, Any], manager: Any, llm_config: Dict[str, Any], max_retries: int = 5):
         super().__init__(config=config, manager=manager)
         self.llm_config = llm_config
         self.max_retries = max_retries

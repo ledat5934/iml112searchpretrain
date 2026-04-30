@@ -272,7 +272,7 @@ def make_search_sota_root_agent(task_summary: str, k: int = 10, guideline: Optio
         selected = items[:k]
         return types.Content(parts=[types.Part(text=json.dumps(selected, ensure_ascii=False))])
 
-    model_name = os.getenv("ROOT_AGENT_MODEL", "gemini-2.5-flash")
+    model_name = os.getenv("ROOT_AGENT_MODEL", "gemini-3-flash-preview")
 
     model_retriever_agent = agents.Agent(
         model=model_name,

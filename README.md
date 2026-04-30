@@ -160,13 +160,16 @@ uv run python run.py --single-iteration custom_nn -i ./your_dataset
 runs/run_<timestamp>/
 ├── iteration_1_traditional/         # Traditional ML solution
 │   ├── submission.csv
+│   ├── hardware_usage.json          # Time-series CPU/RAM/GPU/VRAM metrics
 │   └── states/final_executable_code.py
 ├── iteration_2_custom_nn_search/   # Custom NN with architecture search
 │   ├── submission.csv
+│   ├── hardware_usage.json
 │   └── states/
 │       ├── architecture_retrieval.json  # Search results
 │       └── final_executable_code.py
 ├── iteration_3_pretrained/          # Pretrained model solution
+│   └── hardware_usage.json
 ├── llm_comparison_results.json  # Detailed LLM analysis & ranking
 └── final_submission/            # Best solution (auto-selected)
     ├── submission.csv           # Best submission file
@@ -180,6 +183,32 @@ runs/run_<timestamp>/
 - **Complexity Evaluation**: Balances performance vs code complexity
 - **Business Context**: Factors in interpretability requirements
 - **Detailed Reasoning**: Provides comprehensive justification for selection
+
+#### Hardware Monitoring & Plotting
+
+Per-iteration hardware traces are automatically exported to:
+- `iteration_*/hardware_usage.json`
+
+These JSON files include time-series samples for:
+- CPU usage (%), RAM used (MB)
+- Manager process CPU/RSS
+- GPU utilization (%), VRAM used/total (MB) when GPU is available
+
+Config knobs (in `configs/default.yaml`):
+```yaml
+hardware_monitoring:
+   enabled: true
+   sample_interval_sec: 1.0
+   include_gpu: true
+```
+
+To plot hardware usage after a run:
+```bash
+uv run python scripts/plot_hw_usage.py --run-dir runs/run_<timestamp>_<id>
+```
+
+Output image:
+- `runs/run_<timestamp>_<id>/hardware_usage_overview.png`
 
 ### Configuration Files
 

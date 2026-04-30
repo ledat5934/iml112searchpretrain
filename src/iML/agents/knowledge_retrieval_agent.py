@@ -102,7 +102,8 @@ class KnowledgeRetrievalAgent(BaseAgent):
             import asyncio
             import uuid
 
-            model_name = os.getenv("KNOWLEDGE_SEARCH_MODEL", "gemini-2.5-flash")
+            configured_model = self.llm_config.get("model") if hasattr(self.llm_config, "get") else getattr(self.llm_config, "model", None)
+            model_name = os.getenv("KNOWLEDGE_SEARCH_MODEL", configured_model or "gemini-3-flash-preview")
 
             def instruction_fn(ctx):
                 return prompt_text
@@ -242,9 +243,10 @@ class KnowledgeRetrievalAgent(BaseAgent):
         response = None
         # Prefer ADK+Search when available; fallback to backbone LLM.
         if ADK_AVAILABLE and search_enabled:
+            configured_model = self.llm_config.get("model") if hasattr(self.llm_config, "get") else getattr(self.llm_config, "model", None)
             logger.info(
                 f"[KNOWLEDGE_RETRIEVAL] adk_available=True google_search_tool_enabled=True "
-                f"model={os.getenv('KNOWLEDGE_SEARCH_MODEL', 'gemini-2.5-flash')} iteration_type={iteration_type}"
+                f"model={os.getenv('KNOWLEDGE_SEARCH_MODEL', configured_model or 'gemini-3-flash-preview')} iteration_type={iteration_type}"
             )
             out_text, _events, saw_search = self._run_adk_with_search_blocking(prompt_for_search, save_suffix=save_suffix)
             response = out_text

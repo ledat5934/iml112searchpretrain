@@ -73,6 +73,20 @@ Examples:
         default=None,
         help="Override config search_mode: hybrid (ADK/search) or llm_only (no external search).",
     )
+    parallel_group = parser.add_mutually_exclusive_group()
+    parallel_group.add_argument(
+        "--parallel-iterations",
+        dest="parallel_iterations",
+        action="store_true",
+        help="Run 3 iterations in parallel (process-based).",
+    )
+    parallel_group.add_argument(
+        "--no-parallel-iterations",
+        dest="parallel_iterations",
+        action="store_false",
+        help="Run 3 iterations sequentially.",
+    )
+    parser.set_defaults(parallel_iterations=None)
 
     args = parser.parse_args()
     
@@ -114,6 +128,10 @@ Examples:
         print("   • Traditional ML (XGBoost, LightGBM, CatBoost)")
         print("   • Custom Neural Networks (PyTorch)")
         print("   • Pretrained Models (HuggingFace)")
+        if args.parallel_iterations is True:
+            print("   • Execution: Parallel iterations")
+        elif args.parallel_iterations is False:
+            print("   • Execution: Sequential iterations")
         checkpoint_mode = "multi-iteration"
         single_iteration = None
     
@@ -129,6 +147,7 @@ Examples:
             checkpoint_mode=checkpoint_mode,
             single_iteration=single_iteration,
             search_mode=args.search_mode,
+            parallel_iterations=args.parallel_iterations,
         )
         
         print("\n" + "=" * 50)

@@ -334,7 +334,9 @@ PHASE_NAME: {phase_name}
             def instruction_fn(ctx):
                 return prompt_text
 
-            model_name = os.getenv("BUG_FIX_MODEL", "gemini-2.5-flash")
+            default_llm_cfg = getattr(getattr(self.manager, "config", None), "llm", None)
+            default_model = default_llm_cfg.get("model") if hasattr(default_llm_cfg, "get") else getattr(default_llm_cfg, "model", None)
+            model_name = os.getenv("BUG_FIX_MODEL", default_model or "gemini-3-flash-preview")
             self.logger.info(
                 f"[DEBUG_AGENT] step=refine phase={phase_name} attempt_index={attempt_index} "
                 f"adk_available=True google_search_tool_enabled=True bug_fix_model={model_name}"

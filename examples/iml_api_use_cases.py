@@ -105,6 +105,9 @@ def example_fit_multi_iteration() -> IMLPredictor:
     predictor.fit(
         input_data_folder=DEFAULT_INPUT,
         checkpoint_mode="multi-iteration",
+        # Default is parallel_iterations=True.
+        # Set False to run sequentially.
+        # parallel_iterations=False,
     )
 
     print("Run dir:", predictor.run_dir)

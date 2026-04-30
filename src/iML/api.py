@@ -67,10 +67,16 @@ class IMLPredictor:
         single_iteration: Optional[str] = None,
         ablation_variant: Optional[str] = None,
         search_mode: Optional[str] = None,
+        parallel_iterations: bool = True,
         output_folder: Optional[str | Path] = None,
     ) -> "IMLPredictor":
         """
         Run iML pipeline and keep path references for later `load()` / `predict()`.
+
+        Args:
+            parallel_iterations:
+                Default is True (parallel). Set False to force sequential iteration
+                execution, e.g. for lower resource usage or easier debugging.
 
         Returns:
             self
@@ -87,6 +93,7 @@ class IMLPredictor:
             single_iteration=single_iteration,
             ablation_variant=ablation_variant,
             search_mode=search_mode,
+            parallel_iterations=parallel_iterations,
         )
 
         self.run_dir = target_output

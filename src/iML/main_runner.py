@@ -31,6 +31,7 @@ def run_automl_pipeline(
     single_iteration: str = None,
     ablation_variant: str = None,
     search_mode: str | None = None,
+    parallel_iterations: bool | None = None,
 ):
     """
     Main function to set up the environment and run the entire pipeline.
@@ -85,6 +86,7 @@ def run_automl_pipeline(
             config=config,
             ablation_variant=ablation_variant,
             search_mode=search_mode,
+            parallel_iterations=parallel_iterations,
         )
 
         # 5. Start the pipeline run based on checkpoint mode

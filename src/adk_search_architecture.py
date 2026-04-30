@@ -207,7 +207,7 @@ def make_search_architecture_root_agent(task_summary: str, k: int = 1):
         selected = items[:k]
         return types.Content(parts=[types.Part(text=json.dumps(selected, ensure_ascii=False))])
 
-    model_name = os.getenv("ROOT_AGENT_MODEL", "gemini-2.5-flash")
+    model_name = os.getenv("ROOT_AGENT_MODEL", "gemini-3-flash-preview")
 
     architecture_retriever_agent = agents.Agent(
         model=model_name,

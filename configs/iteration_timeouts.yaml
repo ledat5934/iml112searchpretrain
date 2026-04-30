@@ -30,6 +30,12 @@ use_tutorial_summary: True
 # Debug
 verbosity: 4
 
+# Hardware monitoring (saved as hardware_usage.json per iteration)
+hardware_monitoring:
+  enabled: true
+  sample_interval_sec: 1.0
+  include_gpu: true
+
 # Default LLM Configuration
 llm: &default_llm
   provider: gemini

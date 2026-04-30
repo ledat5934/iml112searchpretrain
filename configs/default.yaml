@@ -19,15 +19,26 @@ use_tutorial_summary: True
 # Debug
 verbosity: 2
 
+# Hardware monitoring (saved as hardware_usage.json per iteration)
+hardware_monitoring:
+  enabled: true
+  sample_interval_sec: 1.0
+  include_gpu: true
+
 # Search mode:
 # - hybrid: use external retrieval/search tools (ADK) when available
 # - llm_only: disable external search entirely; rely on LLM-only generation
 search_mode: hybrid
 
+# Iteration execution mode (for run_pipeline_multi_iteration)
+# - false: run iterations sequentially
+# - true: run iterations in parallel (process-based)
+parallel_iterations: false
+
 # Default LLM Configuration
 llm: &default_llm
   provider: gemini
-  model: gemini-2.5-flash
+  model: gemini-3-flash-preview
   max_tokens: 16384
   proxy_url: null
   temperature: 0.0
