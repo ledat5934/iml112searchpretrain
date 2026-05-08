@@ -1,5 +1,6 @@
 # src/iML/prompts/assembler_prompt.py
 import json
+import os
 from typing import Dict, Any
 
 from .base_prompt import BasePrompt
@@ -34,10 +35,23 @@ Your task is to ensure the script is clean, robust, and correct.
     - If a `sample_submission.csv` exists in the dataset paths, validate that the produced submission has the same columns/order.
     - If any submission validation fails, treat it as a failure: print an error to stderr and `sys.exit(1)`.
 {diagnostics_requirement}
-6.  **Clarity**: Ensure the final script is clean and well-structured.
-7.  **Sample Submission File**: Sample submission file given is for template reference (Columns) only. You have to use the test data or test file to generate predictions and your right submission file. In some cases, you must browse the test image folder to get the IDs and data.
-8.  **Do not add any other code.**
-9.  **Data Loading**: Keep the data loading code of the preprocessing code. DO NOT CHANGE THE FILE PATHS FROM THE ORIGINAL CODE.
+6.  **Artifacts For Diagnosis (MUST SAVE WHEN AVAILABLE)**:
+    - Save reusable artifacts under `{artifacts_dir}`.
+    - If a trained model/checkpoint can be serialized, save it and record the path in `metadata.json`.
+    - If preprocessing assets/tokenizers/encoders are needed for inference, save them and record the paths in `metadata.json`.
+    - If validation predictions are available, save a lightweight CSV/Parquet with prediction columns and target when available.
+    - If training history is available, save it as JSON or CSV.
+    - Always save `{artifacts_dir}/metadata.json` describing:
+      - task type
+      - primary metric name and direction
+      - artifact paths actually written
+      - whether train/validation predictions were saved
+      - whether per-epoch history was saved
+      - any missing artifacts and why they are unavailable
+7.  **Clarity**: Ensure the final script is clean and well-structured.
+8.  **Sample Submission File**: Sample submission file given is for template reference (Columns) only. You have to use the test data or test file to generate predictions and your right submission file. In some cases, you must browse the test image folder to get the IDs and data.
+9.  **Do not add any other code.**
+10. **Data Loading**: Keep the data loading code of the preprocessing code. DO NOT CHANGE THE FILE PATHS FROM THE ORIGINAL CODE.
 
 ## DATAFILE STRUCTURE (SUMMARY)
 {datafile_structure}
@@ -69,8 +83,9 @@ Based on the context above, generate the complete and corrected Python code. The
 
         retry_context = ""
         diagnostics_requirement = ""
+        artifacts_dir = os.path.join(os.path.dirname(output_path), "artifacts")
         if getattr(self.manager, "is_research_phase_enabled", lambda: False)():
-            diagnostics_requirement = """6.  **Diagnostics JSON (MUST PRINT)**:
+            diagnostics_requirement = """11. **Diagnostics JSON (MUST PRINT)**:
     - Before exiting successfully, print exactly one JSON object between these markers:
       - `===DIAGNOSIS_SUMMARY_START===`
       - `===DIAGNOSIS_SUMMARY_END===`
@@ -124,6 +139,7 @@ The code above failed with the following error.
             output_data_format=description.get('output_data', 'N/A'),
             original_code=original_code,
             output_path=output_path,
+            artifacts_dir=artifacts_dir,
             retry_context=retry_context,
             diagnostics_requirement=diagnostics_requirement,
             datafile_structure=datafile_structure or "N/A",

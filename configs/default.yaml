@@ -74,6 +74,7 @@ research_phase:
   enabled: true
   max_iterations: 1
   diagnosis_enabled: true
+  diagnosis_max_rounds: 3
   ablation_enabled: true
   ablation_n_candidates: 3
   ablation_proxy_time_budget_sec: 1200
