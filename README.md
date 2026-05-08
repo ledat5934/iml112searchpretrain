@@ -82,6 +82,12 @@ python run.py -i <path_to_data_folder> -c <path_to_config_file> -o <path_to_outp
 
 * `--checkpoint-action` (optional): For checkpoint modes - where to stop/start (see Checkpoint Guide)
 
+* `--ablation-variant` (optional): Run a single-iteration ablation. Requires `--single-iteration` and `--checkpoint-mode full`:
+  - `reactive`: Skip GuidelineAgent and synthesize minimal guidance
+  - `mono`: Use monolithic coding instead of modular preprocessing/modeling/assembly
+  - `static`: Skip intermediate execution/runtime verification
+  - `no_knowledge`: Skip KnowledgeRetrievalAgent and do not provide a knowledge pack to downstream prompts
+
 ### Complete Example
 
 ```bash
@@ -148,6 +154,9 @@ python run.py --single-iteration pretrained -i ./your_dataset
 
 # Or test custom_nn without architecture search
 python run.py --single-iteration custom_nn -i ./your_dataset
+
+# Ablation: run without KnowledgeRetrievalAgent / knowledge pack
+python run.py -i ./your_dataset --single-iteration traditional --ablation-variant no_knowledge
 ```
 
 #### Output Structure:

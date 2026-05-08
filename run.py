@@ -73,11 +73,12 @@ Examples:
     )
     parser.add_argument(
         "--ablation-variant",
-        choices=["reactive", "mono", "static"],
+        choices=["reactive", "mono", "static", "no_knowledge"],
         default=None,
         help="Run the pipeline in ablation mode to disable specific design principles: "
              "'reactive' (no Guideline agent), 'mono' (monolithic coder without modular assembly), "
-             "'static' (no intermediate execution/runtime verification)."
+             "'static' (no intermediate execution/runtime verification), "
+             "'no_knowledge' (no Knowledge Retrieval agent / knowledge pack)."
     )
     parser.add_argument(
         "--search-mode",

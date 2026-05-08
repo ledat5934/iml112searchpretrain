@@ -271,6 +271,9 @@ class Manager:
     def is_static_mode(self) -> bool:
         return self.is_ablation_variant("static")
 
+    def is_no_knowledge_mode(self) -> bool:
+        return self.is_ablation_variant("no_knowledge")
+
     def is_debug_enabled(self) -> bool:
         return not self.is_static_mode()
 
@@ -1222,6 +1225,28 @@ class Manager:
 
     def _prepare_iteration_knowledge(self, iteration_type: str) -> None:
         """Build iteration-specific knowledge pack (no code) for downstream prompts."""
+        key = iteration_type or "default"
+        if self.is_no_knowledge_mode():
+            logger.info("Ablation (no_knowledge): Skipping KnowledgeRetrievalAgent and using no knowledge pack.")
+            try:
+                if hasattr(self, "knowledge_packs"):
+                    self.knowledge_packs.pop(key, None)
+                self.save_and_log_states(
+                    json.dumps(
+                        {
+                            "ablation_variant": "no_knowledge",
+                            "iteration_type": key,
+                            "knowledge_retrieval_agent": "skipped",
+                            "knowledge_pack": None,
+                        },
+                        indent=2,
+                        ensure_ascii=False,
+                    ),
+                    f"knowledge/knowledge_{key}_ablation_skipped.json",
+                )
+            except Exception:
+                pass
+            return
         model_suggestions = getattr(self, "model_suggestions", None) if iteration_type == "pretrained" else None
         architecture_suggestions = getattr(self, "architecture_suggestions", None) if iteration_type == "custom_nn_search" else None
         try:
@@ -1231,7 +1256,7 @@ class Manager:
                 architecture_suggestions=architecture_suggestions,
             )
             if knowledge_pack and "error" not in knowledge_pack:
-                self.knowledge_packs[iteration_type or "default"] = knowledge_pack
+                self.knowledge_packs[key] = knowledge_pack
             else:
                 logger.warning("KnowledgeRetrievalAgent returned empty/errored pack; continuing without it.")
         except Exception as e:
